@@ -1,0 +1,86 @@
+# 推送 v* tag 时自动构建、校验并发布到 npm，随后把 npm pack 产物挂到该 tag 的 GitHub Release。
+#
+# 发布凭据是仓库 secret NPM_TOKEN（granular npm token，本机已有同名 token，
+# 用 `gh secret set NPM_TOKEN` 注入）。它通过 actions/setup-node 写入的临时 .npmrc
+# 以 ${NODE_AUTH_TOKEN} 的形式被 npm 读取。
+# `--provenance` 是另一套机制：用 GitHub Actions 的 OIDC 签名「这次发布出自哪个仓库哪个 commit」，
+# npm 页面会显示来源，必须给 id-token: write 才能签出来。
+#
+# 有效期约束（npm 官方 2026-07-31 公告 gh.io/npm-gat-bypass2fa-deprecation）：
+# 这种绕过 2FA 的 granular token 此刻仍可直接 publish，但 npm 计划 2027-01 起取消其 direct publish
+# 权限，届时 npm publish --provenance 会直接 403。迁移路径二选一：
+#   1) npm Trusted Publishing(OIDC)：在 npmjs.com 本包设置里登记本仓库+本 workflow，
+#      然后删掉 NODE_AUTH_TOKEN/registry-url 两处，发布改由 OIDC 换 token，无需任何 secret；
+#   2) staged publishing：token 只负责 stage，维护者用2FA approve。
+# 与 provenance 无关，id-token: write 两条路径都要保留。
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # 创建 GitHub Release 并上传 tgz
+  id-token: write # npm publish --provenance 所需的 OIDC 身份
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # 兜底：npm ci 卡住时不要烧满6小时的 Actions 时长
+    # 必须挂在 job 级而非 publish 单步：setup-node 生成的 .npmrc 内容是
+    # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`，npm 解析不到这个环境变量时会直接抛
+    # "Failed to replace env in config"，连前面的 npm ci 都会失败，所以每一步都得能看到它。
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24 # package.json engines 要求 ^22.19.0 || >=24.0.0，24 是当前 LTS
+          registry-url: https://registry.npmjs.org/
+          cache: npm # 以 package-lock.json 为 key 缓存 ~/.npm，workspaces 一并命中
+
+      - name: Install dependencies
+        # 不能改成 npm install：仓库 .npmrc 的 legacy-peer-deps 是必需的，
+        # 多代 dsh 测试宿主（tests/hosts/*）的 peer 范围互相冲突，严格解析必然 ERESOLVE。
+        run: npm ci
+
+      # package.json 的 version 才是发布内容的唯一事实，tag 只是触发器。
+      # 不校验就会出现「推了 v0.3.0、实际发出去的是 0.2.0」这种错发，而 npm 对此不会报错。
+      - name: Verify tag matches package.json version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json 版本 $version 不一致，拒绝发布"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 发布前必须过测试：pretest 会顺带构建 lib/，所以这一步同时覆盖了构建失败。
+      - name: Test
+        run: npm test
+
+      # prepack 钩子会再跑一次 build，因此发出去的包一定包含最新 lib/。
+      - name: Publish to npm
+        run: npm publish --provenance
+
+      # 单独 pack 一份给 Release 用：publish 内部打的 tarball 不会留在工作区。
+      # *.tgz 已被 .gitignore 忽略，不会污染仓库。
+      - name: Pack tarball for the release
+        run: npm pack
+
+      # 幂等：同 tag 重跑时 Release 已存在，就只覆盖上传 tgz，
+      # 否则 gh release create 会因 already_exists 失败，让一次已成功的发布看起来是红的。
+      - name: Attach tarball to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" ./*.tgz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" ./*.tgz --title "$GITHUB_REF_NAME" --generate-notes
+          fi
