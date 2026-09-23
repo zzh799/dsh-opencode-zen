@@ -70,12 +70,12 @@ The model ID must be available in the current gateway catalog. Web and Headless 
 To build from source and install a local package:
 
 ```sh
-npm ci --legacy-peer-deps
+npm ci
 npm pack
 dsh plugin --profile web add ./dsh-opencode-zen-0.2.0.tgz
 ```
 
-The development dependencies include real test packages from multiple DSH generations, so installation requires `--legacy-peer-deps`. For Headless, replace `web` with `headless`.
+The development dependencies include real test packages from multiple DSH generations whose peer dependencies conflict with each other. The `.npmrc` at the repository root enables `legacy-peer-deps` by default, so no extra flag is needed (the bare `npm install` that pnpm runs when installing this plugin from git also relies on it). For Headless, replace `web` with `headless`.
 
 ## Updating the plugin
 

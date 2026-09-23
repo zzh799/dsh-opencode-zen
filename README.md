@@ -71,12 +71,12 @@ dsh --profile headless --patch ./headless.patch.yml "你好"
 如需从源码构建并安装本地包：
 
 ```sh
-npm ci --legacy-peer-deps
+npm ci
 npm pack
 dsh plugin --profile web add ./dsh-opencode-zen-0.2.0.tgz
 ```
 
-开发依赖包含多代 DSH 的真实测试包，安装时需要 `--legacy-peer-deps`。Headless 用户将 `web` 换成 `headless`。
+开发依赖包含多代 DSH 的真实测试包，它们的 peer 依赖互相冲突，仓库根目录的 `.npmrc` 已默认启用 `legacy-peer-deps`，无需再手动传参（pnpm 从 git 安装本插件时执行的裸 `npm install` 也依赖这份配置）。Headless 用户将 `web` 换成 `headless`。
 
 ## 升级插件
 
