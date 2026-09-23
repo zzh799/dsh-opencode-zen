@@ -11,10 +11,17 @@ import { MODEL_METADATA_URL, modelBaseURL, readModelMetadata } from './model-met
 import { sortModels, type ZenModel } from './models-contract.ts'
 import type { ModelMetadata } from './model-metadata.ts'
 import { readJsonResponse } from './json-response.ts'
+import { ZEN_ROUTE, type RouteDescriptor } from './providers.ts'
 
-export const PROVIDER_ID = 'opencode-zen'
-export const DISPLAY_NAME = 'OpenCode Zen'
-export const DEFAULT_BASE_URL = 'https://opencode.ai/zen/v1'
+/**
+ * The Zen plan's identity, kept as named exports because it is what the
+ * top-level configuration fields describe. Every consumer that serves exactly
+ * one plan takes a {@link RouteDescriptor} instead; the Go plan passes
+ * `GO_ROUTE` through the same code.
+ */
+export const PROVIDER_ID = ZEN_ROUTE.id
+export const DISPLAY_NAME = ZEN_ROUTE.displayName
+export const DEFAULT_BASE_URL = ZEN_ROUTE.defaultBaseURL
 const MODELS_FETCH_TIMEOUT_MS = 10_000
 const MODEL_LISTING_MAX_BYTES = 1024 * 1024
 const MODEL_METADATA_MAX_BYTES = 16 * 1024 * 1024
@@ -30,11 +37,12 @@ export interface CatalogSnapshot {
 }
 
 /** Built-ins are outage fallbacks and compatibility hints, never a membership whitelist. */
-function builtinModels(baseURL: string): Map<string, Model<Api>> {
-  // models.dev keys this gateway's metadata under `opencode` (OpenCode Zen);
-  // `opencode-go` is the retired Go subscription's record.
-  return new Map((getBuiltinModels('opencode') as Model<Api>[]).map(model => [model.id, {
-    ...model, provider: PROVIDER_ID, baseUrl: modelBaseURL(model.api, baseURL),
+function builtinModels(baseURL: string, route: RouteDescriptor): Map<string, Model<Api>> {
+  // models.dev keys each plan's metadata separately: `opencode` is Zen and
+  // `opencode-go` is the Go subscription. Each route reads its own table, so a
+  // model missing from one plan never leaks in through the other's fallback.
+  return new Map((getBuiltinModels(route.builtinKey) as Model<Api>[]).map(model => [model.id, {
+    ...model, provider: route.id, baseUrl: modelBaseURL(model.api, baseURL),
   }]))
 }
 
@@ -74,9 +82,9 @@ function harnessApiKeyAuth(): Provider['auth'] {
   } }
 }
 
-function buildProvider(baseURL: string, models: readonly Model<Api>[]): Provider {
+function buildProvider(baseURL: string, models: readonly Model<Api>[], route: RouteDescriptor): Provider {
   return createProvider({
-    id: PROVIDER_ID, name: DISPLAY_NAME, baseUrl: baseURL,
+    id: route.id, name: route.displayName, baseUrl: baseURL,
     auth: harnessApiKeyAuth(), models: [...models],
     api: {
       'anthropic-messages': anthropicMessagesApi(),
@@ -99,6 +107,8 @@ export class OpencodeZenCatalog {
     private readonly onFallback: (detail: { url: string; error: unknown; kept: number }) => void,
     /** Kept for API compatibility; now reports unconfigured ids rather than hiding them. */
     private readonly onOmitted: (ids: readonly string[]) => void,
+    /** The plan this catalog serves; the Zen fields are what the top-level config describes. */
+    private readonly route: RouteDescriptor = ZEN_ROUTE,
   ) {}
 
   snapshot(force = false): Promise<CatalogSnapshot> {
@@ -120,7 +130,9 @@ export class OpencodeZenCatalog {
     })
     if (response.status === 304 && this.metadata !== undefined) return this.metadata
     if (!response.ok) throw new Error(`models.dev answered ${response.status}`)
-    const metadata = readModelMetadata(await readJsonResponse(response, MODEL_METADATA_MAX_BYTES), this.baseURL, builtin)
+    const metadata = readModelMetadata(
+      await readJsonResponse(response, MODEL_METADATA_MAX_BYTES), this.baseURL, builtin, this.route,
+    )
     this.metadata = metadata
     this.metadataETag = response.headers.get('etag') ?? undefined
     return metadata
@@ -128,7 +140,7 @@ export class OpencodeZenCatalog {
 
   /** Gateway ids decide membership; online metadata decides how to call each model. */
   private async build(): Promise<CatalogSnapshot> {
-    const builtin = builtinModels(this.baseURL)
+    const builtin = builtinModels(this.baseURL, this.route)
     const [listing, metadataResult] = await Promise.allSettled([
       fetchLiveModelIds(this.baseURL), this.refreshMetadata(builtin),
     ])
@@ -144,7 +156,7 @@ export class OpencodeZenCatalog {
       return {
         details: this.served?.details ?? new Map(),
         models, unavailable: this.served?.unavailable ?? new Map(),
-        provider: buildProvider(this.baseURL, [...models.values()]), live: false, fetchedAtMs: Date.now(),
+        provider: buildProvider(this.baseURL, [...models.values()], this.route), live: false, fetchedAtMs: Date.now(),
       }
     }
     const models = new Map<string, Model<Api>>()
@@ -161,7 +173,7 @@ export class OpencodeZenCatalog {
     if (unavailable.size > 0) this.onOmitted([...unavailable.keys()])
     return {
       details: new Map(listing.value.map(id => [id, metadata?.details.get(id) ?? {}])),
-      models, unavailable, provider: buildProvider(this.baseURL, [...models.values()]),
+      models, unavailable, provider: buildProvider(this.baseURL, [...models.values()], this.route),
       live: true, fetchedAtMs: Date.now(),
     }
   }
@@ -173,7 +185,7 @@ export class OpencodeZenCatalog {
     if (!snapshot.models.has(id) && snapshot === cached) snapshot = await this.snapshot(true)
     if (snapshot.unavailable.has(id)) {
       throw new LlmError(
-        `opencode-zen model "${id}" is advertised but cannot be configured: ${snapshot.unavailable.get(id)}; refresh the model list to retry`,
+        `${this.route.id} model "${id}" is advertised but cannot be configured: ${snapshot.unavailable.get(id)}; refresh the model list to retry`,
         'MODEL_METADATA_UNAVAILABLE',
       )
     }

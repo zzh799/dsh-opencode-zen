@@ -1,7 +1,7 @@
 {
   "name": "dsh-opencode-zen",
-  "version": "0.2.0",
-  "description": "OpenCode Zen model provider and settings UI for DeepSeek Harness",
+  "version": "0.3.0",
+  "description": "OpenCode gateway provider for DeepSeek Harness: the Zen pay-as-you-go plan and the Go subscription, with their settings UI",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -34,6 +34,7 @@
     "cordis.patch.yml",
     "THIRD_PARTY_NOTICES.md",
     "docs",
+    "!docs/model-selection-handoff.md",
     "examples"
   ],
   "dsh": {
@@ -205,6 +206,7 @@
     "dsh",
     "opencode",
     "opencode-zen",
+    "opencode-go",
     "llm",
     "cordis"
   ],

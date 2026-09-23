@@ -7,8 +7,8 @@
  * asked for and could not preview; staged text makes what is on screen exactly
  * what a save would store.
  *
- * A field shows its effective value — the user layer over the composition
- * layer over the schema default — and whether the user layer carries it. That
+ * A field shows its effective value - the user layer over the composition
+ * layer over the schema default - and whether the user layer carries it. That
  * presence, not a value comparison, is what marks a field overridden: an
  * override equal to the composition default is still an override.
  *
@@ -18,7 +18,12 @@
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+// Type-only: the value a nested path op stores, derived rather than restated.
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsScope, SettingsScopeSnapshot } from './settings.ts'
+
+/** The settings value a path op carries; a field's parse only ever yields these. */
+type StoredValue = Extract<SettingsPathOpView, { op: 'set' }>['value']
 
 /** The write one field's staged text performs when the page is saved. */
 export type FieldWrite =
@@ -29,11 +34,18 @@ export type FieldWrite =
 export interface FieldSpec {
   /** Field name inside the namespace section. */
   field: string
+  /**
+   * Where inside the section this field lives. Absent means the field name is
+   * the whole path, which is every top-level field; the Go plan's fields sit
+   * under `go` and address `['go', field]`. The form key stays `field` so a
+   * page can name both plans' switches without them colliding.
+   */
+  path?: readonly string[]
   /** Render a stored value as draft text; the empty string when the section carries none. */
   format: (value: unknown) => string
   /**
    * The write this draft text stages, or undefined when the text is not a
-   * value this field accepts — which blocks the save rather than discarding it.
+   * value this field accepts - which blocks the save rather than discarding it.
    */
   parse: (text: string) => FieldWrite | undefined
 }
@@ -112,14 +124,43 @@ interface PlannedWrite {
 }
 
 /**
+ * Read a value at a path inside a settings layer. A layer that stops being an
+ * object before the path is exhausted carries nothing there.
+ * @param root - the layer's value.
+ * @param path - the segments to walk.
+ * @returns the value at the path, or undefined.
+ */
+function readAt(root: unknown, path: readonly string[]): unknown {
+  let current: unknown = root
+  for (const key of path) {
+    if (current === null || typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[key]
+  }
+  return current
+}
+
+/** Whether an object layer carries the path's own entry, as opposed to inheriting it. */
+function hasAt(root: unknown, path: readonly string[]): boolean {
+  let current: unknown = root
+  for (const [index, key] of path.entries()) {
+    if (current === null || typeof current !== 'object' || !Object.hasOwn(current, key)) return false
+    current = (current as Record<string, unknown>)[key]
+    if (index === path.length - 1) return true
+  }
+  return false
+}
+
+/**
  * A whole-number field. An empty draft clears the field; any other draft that
  * is not a finite number blocks the save.
  * @param field - field name inside the namespace section.
+ * @param path - where inside the section the field lives; the field name alone when absent.
  * @returns the field's conversion spec.
  */
-export function numberField(field: string): FieldSpec {
+export function numberField(field: string, path?: readonly string[]): FieldSpec {
   return {
     field,
+    ...path === undefined ? {} : { path },
     format: value => typeof value === 'number' ? String(value) : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -137,11 +178,13 @@ export function numberField(field: string): FieldSpec {
  * schema supplied. Its draft text is the state's string form so the shared
  * override and invalid tracking needs no second branch.
  * @param field - field name inside the namespace section.
+ * @param path - where inside the section the field lives; the field name alone when absent.
  * @returns the field's conversion spec.
  */
-export function booleanField(field: string): FieldSpec {
+export function booleanField(field: string, path?: readonly string[]): FieldSpec {
   return {
     field,
+    ...path === undefined ? {} : { path },
     format: value => typeof value === 'boolean' ? String(value) : '',
     parse: (text) => {
       if (text === 'true') return { kind: 'set', value: true }
@@ -157,11 +200,13 @@ export function booleanField(field: string): FieldSpec {
  * A free-text field. An empty draft clears the field, so emptying the control
  * and saving is the same gesture as resetting it.
  * @param field - field name inside the namespace section.
+ * @param path - where inside the section the field lives; the field name alone when absent.
  * @returns the field's conversion spec.
  */
-export function textField(field: string): FieldSpec {
+export function textField(field: string, path?: readonly string[]): FieldSpec {
   return {
     field,
+    ...path === undefined ? {} : { path },
     format: value => typeof value === 'string' ? value : '',
     parse: (text) => {
       const trimmed = text.trim()
@@ -174,11 +219,13 @@ export function textField(field: string): FieldSpec {
  * A structured field edited as JSON text. Empty text clears the field and
  * malformed JSON blocks the save instead of reaching the Host as a string.
  * @param field - field name inside the namespace section.
+ * @param path - where inside the section the field lives; the field name alone when absent.
  * @returns the field's conversion spec.
  */
-export function jsonField(field: string): FieldSpec {
+export function jsonField(field: string, path?: readonly string[]): FieldSpec {
   return {
     field,
+    ...path === undefined ? {} : { path },
     format: value => value === undefined || value === null ? '' : JSON.stringify(value, undefined, 2),
     parse: (text) => {
       const trimmed = text.trim()
@@ -303,8 +350,8 @@ export class StagedForm {
   /**
    * Write every staged edit, then re-seed from what the Host accepted.
    *
-   * The Host is the only authority on whether a value was accepted — its
-   * validators own the constraints no schema can express — so the outcome is
+   * The Host is the only authority on whether a value was accepted - its
+   * validators own the constraints no schema can express - so the outcome is
    * read back from the section rather than predicted here. A save that did not
    * land keeps its drafts, so the user can correct them instead of retyping.
    */
@@ -355,13 +402,21 @@ export class StagedForm {
   }
 
   private async clear(field: string): Promise<boolean> {
-    await this.scope.unset(field)
+    const path = this.pathOf(field)
+    // The client scope's own set/unset address one segment, so a nested field
+    // goes through the Host's path op instead.
+    if (path.length === 1) await this.scope.unset(field)
+    else await this.scope.mutate([{ op: 'unset', path: [...path] }])
     return !this.stored(field)
   }
 
   private async store(field: string, value: unknown): Promise<boolean> {
-    await this.scope.set(field, value)
-    return sameJsonValue(this.userLayer()?.[field], value)
+    const path = this.pathOf(field)
+    if (path.length === 1) await this.scope.set(field, value)
+    // The value came from this field's parse, which only yields JSON values;
+    // the path op is typed to them because the Host documents must be JSON.
+    else await this.scope.mutate([{ op: 'set', path: [...path], value: value as StoredValue }])
+    return sameJsonValue(readAt(this.userLayer(), path), value)
   }
 
   private stage(field: string, edit: StagedEdit): void {
@@ -378,16 +433,21 @@ export class StagedForm {
     return spec
   }
 
+  /** Where one field lives inside the section. */
+  private pathOf(field: string): readonly string[] {
+    return this.spec(field).path ?? [field]
+  }
+
   private snapshotOf(): SettingsScopeSnapshot<Record<string, unknown>> {
     return this.scope.getSnapshot()
   }
 
   private sectionValue(field: string): unknown {
-    return this.snapshotOf().value?.[field]
+    return readAt(this.snapshotOf().value, this.pathOf(field))
   }
 
   private baseValue(field: string): unknown {
-    return (this.snapshotOf().base as Record<string, unknown> | undefined)?.[field]
+    return readAt(this.snapshotOf().base, this.pathOf(field))
   }
 
   private userLayer(): Record<string, unknown> | undefined {
@@ -395,8 +455,7 @@ export class StagedForm {
   }
 
   private stored(field: string): boolean {
-    const user = this.userLayer()
-    return user !== undefined && Object.hasOwn(user, field)
+    return hasAt(this.userLayer(), this.pathOf(field))
   }
 
   private publish(): void {

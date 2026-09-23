@@ -1,6 +1,12 @@
 /** Settings discovery includes lifecycle data that the host's generic model DTO omits. */
 import type { RemoteResult, TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 
+/**
+ * One settings-page model row. Both plans share this shape: the listing
+ * endpoint, the metadata source and the picker are the only things that
+ * differ, and each is addressed by the remote namespace rather than by a
+ * field on the row.
+ */
 export interface ZenModel {
   id: string
   name?: string
@@ -28,12 +34,19 @@ export function sortModels(models: readonly ZenModel[], now = Date.now()): ZenMo
     || (isNewModel(a, now) && isNewModel(b, now) ? b.releaseDate!.localeCompare(a.releaseDate!) : 0))
 }
 
-export function parseZenModels(value: unknown): ZenModel[] {
-  if (!Array.isArray(value)) throw new Error('Invalid OpenCode Zen model list')
+/**
+ * Validate one plan's listing. The plan name only reaches the refusal text:
+ * a malformed Go list must not read as a Zen problem on the settings page.
+ * @param value - the decoded remote payload.
+ * @param plan - the plan named in a refusal; the Zen plan by default.
+ * @returns the validated rows.
+ */
+export function parseZenModels(value: unknown, plan = 'Zen'): ZenModel[] {
+  if (!Array.isArray(value)) throw new Error(`Invalid OpenCode ${plan} model list`)
   return value.map((entry: unknown) => {
-    if (!entry || typeof entry !== 'object') throw new Error('Invalid OpenCode Zen model')
+    if (!entry || typeof entry !== 'object') throw new Error(`Invalid OpenCode ${plan} model`)
     const row = entry as Record<string, unknown>
-    if (typeof row.id !== 'string' || !row.id) throw new Error('Missing OpenCode Zen model id')
+    if (typeof row.id !== 'string' || !row.id) throw new Error(`Missing OpenCode ${plan} model id`)
     const model: ZenModel = { id: row.id }
     if (typeof row.name === 'string') model.name = row.name
     for (const key of ['contextWindow', 'maxTokens'] as const) {
@@ -45,15 +58,25 @@ export function parseZenModels(value: unknown): ZenModel[] {
   })
 }
 
+const parseGoModels = (value: unknown): ZenModel[] => parseZenModels(value, 'Go')
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteNamespaceMap {
     opencodeZenModels: { read(): Promise<RemoteResult<readonly ZenModel[]>> }
+    opencodeGoModels: { read(): Promise<RemoteResult<readonly ZenModel[]>> }
   }
 }
 const codec = { mode: 'strict' as const, typeSymbol: 'dsh-opencode-zen#ZenModels',
   schema: { parse: parseZenModels }, create: () => ({ parse: parseZenModels }) }
+const goCodec = { mode: 'strict' as const, typeSymbol: 'dsh-opencode-zen#GoModels',
+  schema: { parse: parseGoModels }, create: () => ({ parse: parseGoModels }) }
 export const modelsRemote: TypertRemoteContribution = {
   package: 'dsh-opencode-zen',
   descriptors: [{ id: 'dsh-opencode-zen#opencodeZenModels/read', service: 'opencodeZenModels',
     namespace: 'opencodeZenModels', method: 'read', invocation: { kind: 'direct' }, parameters: [], result: codec }],
+}
+export const goModelsRemote: TypertRemoteContribution = {
+  package: 'dsh-opencode-zen',
+  descriptors: [{ id: 'dsh-opencode-zen#opencodeGoModels/read', service: 'opencodeGoModels',
+    namespace: 'opencodeGoModels', method: 'read', invocation: { kind: 'direct' }, parameters: [], result: goCodec }],
 }

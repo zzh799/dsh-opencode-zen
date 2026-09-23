@@ -13,3 +13,14 @@ export class ZenModelsService extends TypertRemoteService {
     return discoverSettingsModels(this.options.catalog())
   }
 }
+
+/** The Go plan's listing, on its own namespace so the settings page can tell the plans apart. */
+export class GoModelsService extends TypertRemoteService {
+  constructor(ctx: Context, private readonly options: { catalog: () => OpencodeZenCatalog }) {
+    super(ctx, 'opencodeGoModels')
+  }
+
+  read(): Promise<readonly ZenModel[]> {
+    return discoverSettingsModels(this.options.catalog())
+  }
+}

@@ -10,6 +10,7 @@ import type { LlmDiscoveredModel, SettingsPathOpView } from '@deepseek-ai/dsh-ap
 import { RemoteError, stubSettingsScope } from './support/client.ts'
 import {
   StagedForm,
+  booleanField,
   jsonField,
   numberField,
   textField,
@@ -21,29 +22,53 @@ import {
   type OpencodeZenSettings,
 } from '../src/client/section-controller.ts'
 
+/** The Host's resolved section view: the user layer over the base layer. */
+function mergeLayers(base: unknown, user: unknown): Record<string, unknown> {
+  const left = typeof base === 'object' && base !== null ? base as Record<string, unknown> : {}
+  const right = typeof user === 'object' && user !== null ? user as Record<string, unknown> : {}
+  const merged: Record<string, unknown> = { ...left }
+  for (const [key, value] of Object.entries(right)) {
+    merged[key] = typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? mergeLayers(left[key], value)
+      : value
+  }
+  return merged
+}
+
+/** Apply one path op where the Host would: the named leaf, and nothing else. */
+function applyPathOp(root: Record<string, unknown>, op: SettingsPathOpView): void {
+  const path = [...op.path]
+  const leaf = path.pop()!
+  let node = root
+  for (const key of path) {
+    if (typeof node[key] !== 'object' || node[key] === null) node[key] = {}
+    node = node[key] as Record<string, unknown>
+  }
+  if (op.op === 'set') node[leaf] = op.value
+  else delete node[leaf]
+}
+
 /** Make the stub behave like a Host that accepts every write. */
 function acceptWrites(host: ReturnType<typeof stubSettingsScope>): void {
-  const section = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().value as object })
+  const base = (): Record<string, unknown> => (host.scope.getSnapshot().base ?? {}) as Record<string, unknown>
   const layer = (): Record<string, unknown> => ({ ...host.scope.getSnapshot().user as object })
+  // Writing the user layer is what moves; the resolved view follows from it, so
+  // an unset leaf re-inherits whatever the composition layer supplies.
+  const accept = (next: Record<string, unknown>): void => {
+    host.publish({ value: mergeLayers(base(), next), user: next })
+  }
   host.set.mockImplementation((field: string, value: unknown) => {
-    host.publish({ value: { ...section(), [field]: value }, user: { ...layer(), [field]: value } })
+    accept({ ...layer(), [field]: value })
   })
   host.mutate.mockImplementation((ops: readonly SettingsPathOpView[]) => {
-    const value = { ...section() }
-    const user = { ...layer() }
-    for (const op of ops) {
-      const field = op.path[0]!
-      if (op.op === 'set') {
-        value[field] = op.value
-        user[field] = op.value
-      }
-    }
-    host.publish({ value, user })
+    const next = structuredClone(layer())
+    for (const op of ops) applyPathOp(next, op)
+    accept(next)
   })
   host.unset.mockImplementation((field: string) => {
-    const user = Object.fromEntries(Object.entries(layer()).filter(([key]) => key !== field))
-    const base = host.scope.getSnapshot().base as Record<string, unknown> | undefined
-    host.publish({ value: { ...section(), [field]: base?.[field] }, user })
+    const next = { ...layer() }
+    delete next[field]
+    accept(next)
   })
 }
 
@@ -267,6 +292,57 @@ describe('StagedForm', () => {
     expect(form.shell().available).toBe(false)
     expect(() => form.field('mystery')).toThrow(/no field mystery/)
   })
+
+  it('reads and writes a nested field through its own document path', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    acceptWrites(host)
+    const form = new StagedForm(host.scope as never, [
+      booleanField('go.enabled', ['go', 'enabled']),
+      textField('go.baseURL', ['go', 'baseURL']),
+    ])
+    host.publish({
+      status: 'ready',
+      writable: true,
+      value: { go: { enabled: true, baseURL: 'https://go.test/v1' } },
+      user: { go: { enabled: true } },
+    })
+
+    // Both layers are read at the path: one leaf is overridden, the other inherited.
+    expect(form.field('go.enabled')).toEqual(field('true', { overridden: true }))
+    expect(form.field('go.baseURL')).toEqual(field('https://go.test/v1'))
+
+    form.actions().edit('go.enabled', 'false')
+    form.actions().edit('go.baseURL', 'https://other.test/v1')
+    await form.save()
+
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['go', 'enabled'], value: false }])
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['go', 'baseURL'], value: 'https://other.test/v1' }])
+    expect(form.shell().dirty).toBe(false)
+    // Each leaf moves on its own; the sibling the save did not name stays put.
+    expect(host.scope.getSnapshot().user).toEqual({ go: { enabled: false, baseURL: 'https://other.test/v1' } })
+  })
+
+  it('clears a nested field with a path op, so it re-inherits the section value', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    acceptWrites(host)
+    const form = new StagedForm(host.scope as never, [textField('go.baseURL', ['go', 'baseURL'])])
+    host.publish({
+      status: 'ready',
+      writable: true,
+      // The composition layer supplies the endpoint; the user layer overrides it.
+      base: { go: { baseURL: 'https://go.test/v1' } },
+      value: { go: { baseURL: 'https://mine.test/v1' } },
+      user: { go: { baseURL: 'https://mine.test/v1' } },
+    })
+    expect(form.field('go.baseURL')).toEqual(field('https://mine.test/v1', { overridden: true }))
+
+    form.actions().edit('go.baseURL', '')
+    expect(form.shell().dirty).toBe(true)
+    await form.save()
+
+    expect(host.mutate).toHaveBeenCalledWith([{ op: 'unset', path: ['go', 'baseURL'] }])
+    expect(form.field('go.baseURL')).toEqual(field('https://go.test/v1'))
+  })
 })
 
 describe('jsonField', () => {
@@ -338,7 +414,9 @@ describe('OpencodeZenSectionController', () => {
     host.publish(ready({ baseURL: 'https://gateway.test/v1', apiKeyEnv: 'MY_OPENCODE_KEY' }))
     await vi.waitFor(() => { expect(state().apiKeyConfigured).toBe(true) })
 
-    expect(credentials.describe).toHaveBeenCalledWith(['MY_OPENCODE_KEY'])
+    // One call covers both plans: the Go plan names no reference here, so it
+    // resolves through the shared default.
+    expect(credentials.describe).toHaveBeenCalledWith(['MY_OPENCODE_KEY', 'OPENCODE_API_KEY'])
     expect(state()).toMatchObject({
       baseURL: { text: 'https://gateway.test/v1', overridden: false },
       refreshMinutes: { text: '', overridden: false },
@@ -374,7 +452,7 @@ describe('OpencodeZenSectionController', () => {
     await vi.waitFor(() => {
       expect(controller.inject().hooks.opencodeZen.getSnapshot().apiKeyConfigured).toBe(false)
     })
-    expect(credentials.describe).toHaveBeenCalledWith(['SECOND_REF'])
+    expect(credentials.describe).toHaveBeenCalledWith(['SECOND_REF', 'OPENCODE_API_KEY'])
   })
 
   it('drops a describe response that failed or drifted to another reference', async () => {

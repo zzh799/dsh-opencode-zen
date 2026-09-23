@@ -47,13 +47,22 @@ interface BootOptions {
   baseURL: string
 }
 
-/** The plugin as a mountable cordis definition: `apply`'s named exports do not ride the function value. */
-function asPlugin(config?: unknown): { name: string; inject: string[]; apply: (ctx: Context) => void } {
+/**
+ * The plugin as a mountable cordis definition: `apply`'s named exports do not
+ * ride the function value.
+ *
+ * Every case here describes the Zen plan, whose fields are the top-level ones,
+ * so the entry mutes the Go plan. Both plans default to the same credential
+ * reference and this composition stores one, which means a schema-defaulted Go
+ * route would register beside Zen and reach the real endpoint; the Go plan has
+ * its own spec.
+ */
+function asPlugin(config?: Record<string, unknown>): { name: string; inject: string[]; apply: (ctx: Context) => void } {
   return {
     name: 'llm-opencode-zen-test',
     inject: ['llm'],
     apply: (ctx: Context) => {
-      apply(ctx, config as never)
+      apply(ctx, { go: { enabled: false }, ...config } as never)
     },
   }
 }
@@ -217,7 +226,7 @@ describe('settings-backed configuration', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     // Describe still sees a configured reference (the route stays registered),
-    // but resolution finds nothing — the race a removed shadowing source leaves.
+    // but resolution finds nothing - the race a removed shadowing source leaves.
     ctx.provide('credentials', {
       describe: () => Promise.resolve({ configured: true, writable: true }),
       resolve: () => Promise.resolve(undefined),

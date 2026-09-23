@@ -1,4 +1,18 @@
+# A headless run on the OpenCode Zen plan.
 - id: agent-default-model
   config:
     provider: opencode-zen
     model: deepseek-v4.1-flash
+
+# The same run on the OpenCode Go subscription: the plan is on by default, so a
+# patch only has to name its credential reference when that differs from Zen's,
+# and point the default model at one of the Go gateway's ids.
+# - id: llm-opencode-zen
+#   config:
+#     go:
+#       enabled: true
+#       apiKeyEnv: OPENCODE_API_KEY
+# - id: agent-default-model
+#   config:
+#     provider: opencode-go
+#     model: glm-5.3

@@ -237,9 +237,9 @@ function replayedAssistant(message: Message, source: ModelMessageSource, rawStat
  * Convert one durable Harness assistant message into pi-ai history.
  *
  * Durable content is the authoritative record; replay metadata only restores
- * native fidelity (ids, signatures). A replay state this build cannot use —
+ * native fidelity (ids, signatures). A replay state this build cannot use -
  * another adapter's kind, another version, a malformed value, or metadata that
- * no longer matches the content — therefore degrades the one message to
+ * no longer matches the content - therefore degrades the one message to
  * provider-neutral history instead of failing the request.
  * @param message - assistant content with required source and optional adapter-owned replay metadata.
  * @param onDegrade - called with the diagnostic reason when an unusable replay

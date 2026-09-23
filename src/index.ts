@@ -1,12 +1,13 @@
 /**
- * Dedicated OpenCode Zen adapter plugin. Registers one `opencode-zen` route
- * whose catalog follows the gateway's live model listing and models.dev
- * metadata, and installs the `llm-opencode-zen` settings section: the Web UI
- * renders it as its own settings page where the API key and every knob are
- * edited, and a change reaches the next request without a restart. The plugin
- * exists because the gateway has wire requirements a generic pi-ai route
- * cannot express: a mandatory per-conversation `x-opencode-session` routing
- * header and a model list that rotates faster than any shipped catalog.
+ * Dedicated OpenCode adapter plugin. Registers two routes, `opencode-zen` and
+ * `opencode-go`, whose catalogs follow each gateway's live model listing and
+ * models.dev metadata, and installs the `llm-opencode-zen` settings section:
+ * the Web UI renders it as its own settings page with a panel per plan, where
+ * the API keys and every knob are edited, and a change reaches the next
+ * request without a restart. The plugin exists because the gateway has wire
+ * requirements a generic pi-ai route cannot express: a mandatory
+ * per-conversation `x-opencode-session` routing header and a model list that
+ * rotates faster than any shipped catalog.
  *
  * DSH 0.1.5/0.1.6 layer the settings document over the composition entry;
  * 0.1.7 edits live configuration fields on the profile entry directly.
@@ -15,19 +16,24 @@
  * - id: llm-opencode-zen
  *   name: 'dsh-opencode-zen'
  *   config:
- *     enabled: true                     # false withdraws the route; the plugin stays mounted
- *     apiKeyEnv: OPENCODE_API_KEY       # default
- *     baseURL: https://opencode.ai/zen/v1   # default
- *     refreshMinutes: 60                # live catalog re-resolution interval
+ *     enabled: true                     # Zen: false withdraws that route; the plugin stays mounted
+ *     apiKeyEnv: OPENCODE_API_KEY       # Zen credential; default
+ *     baseURL: https://opencode.ai/zen/v1   # Zen endpoint; default
+ *     refreshMinutes: 60                # live catalog re-resolution interval, both plans
  *     enabledModels: []                 # absent = every model; empty = the route withdraws
+ *     go:                               # the OpenCode Go subscription plan
+ *       enabled: true                   # default
+ *       apiKeyEnv: OPENCODE_API_KEY     # default; set it apart to bill Go separately
+ *       baseURL: https://opencode.ai/zen/go/v1
  * ```
  *
- * The credential resolves per request through the credentials seam, falling
- * back to the process environment — the same reference semantics the generic
- * pi-ai adapter uses. The route registers atomically: if another adapter
- * family already owns `opencode-zen` (a profile in `llm-pi-ai`, for example),
- * the refusal is logged with the reason and everything else this plugin does
- * still works.
+ * Each plan registers its route only while its own credential resolves, so
+ * pointing `go.apiKeyEnv` at a reference nobody set withdraws exactly that
+ * route. Credentials resolve per request through the credentials seam, falling
+ * back to the process environment: the same reference semantics the generic
+ * pi-ai adapter uses. A route registers atomically: if another adapter family
+ * already owns it (a profile in `llm-pi-ai`, for example), the refusal is
+ * logged with the reason and everything else this plugin does still works.
  *
  * @module dsh-opencode-zen
  */
@@ -40,15 +46,14 @@ import type { AdapterRegistrationHandle, LlmModelDiscoveryRequest } from '@deeps
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-settings'
 import { OpencodeZenAdapter } from './adapter.ts'
-import {
-  DISPLAY_NAME,
-  PROVIDER_ID,
-  discoverCatalogModels,
-} from './catalog.ts'
+import type { OpencodeZenImageAccess } from './adapter.ts'
+import { discoverCatalogModels } from './catalog.ts'
 import { Config, PlainConfig, readConfig, assertBaseURL, withdrawsFromPickers } from './config.ts'
 import type { LiveConfig, OpencodeZenConfig } from './config.ts'
-import { ZenModelsService } from './models.ts'
+import { GoModelsService, ZenModelsService } from './models.ts'
+import { GO_ROUTE, ZEN_ROUTE, type RouteDescriptor } from './providers.ts'
 import { registerZenRemotes } from './remotes.ts'
+import { GoUsageService } from './usage.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -66,8 +71,10 @@ export {
   discoverCatalogModels,
   readLiveModelIds,
 } from './catalog.ts'
+export { GO_ROUTE, ZEN_ROUTE } from './providers.ts'
+export type { RouteDescriptor } from './providers.ts'
 export { Config, PlainConfig, assertBaseURL } from './config.ts'
-export type { OpencodeZenConfig } from './config.ts'
+export type { OpencodeGoConfig, OpencodeZenConfig } from './config.ts'
 
 export const name = 'llm-opencode-zen'
 export const inject = ['llm']
@@ -87,10 +94,36 @@ function whitelistKey(config: OpencodeZenConfig): string {
 }
 
 /**
- * Register the route, its discovery, the settings section, and their
+ * One plan's configuration: its own fields over the knobs both plans share, so
+ * the adapter and the catalog read a uniform document and never branch on
+ * which plan they serve.
+ * @param config - the document in force.
+ * @returns the Go plan's projection; the Zen plan's projection is the document.
+ */
+function goConfigOf(config: OpencodeZenConfig): OpencodeZenConfig {
+  return { ...config, ...config.go }
+}
+
+/**
+ * One plan's live wiring: the adapter, its registration handle, and the two
+ * picker facts a change is compared on.
+ */
+interface Plan {
+  readonly route: RouteDescriptor
+  readonly adapter: OpencodeZenAdapter
+  readonly config: () => OpencodeZenConfig
+  /** Register while the switch is on, a model is listed, and the credential resolves. */
+  apply(configured: boolean): void
+  /** Follow the picker-relevant facts and the credential the plan names. */
+  sync(): void
+  dispose(): void
+}
+
+/**
+ * Register both routes, their discovery, the settings section, and their
  * teardown for one mount. Configuration starts as the cordis.yml entry and is
  * replaced by the settings section's resolved value once the settings
- * provider attaches; the adapter re-reads it at every operation.
+ * provider attaches; each adapter re-reads it at every operation.
  */
 export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void {
   const config = raw && typeof raw.enabled === 'object' ? raw as LiveConfig : Config(raw)
@@ -98,18 +131,23 @@ export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void 
   // Self-contained misconfiguration fails at load; a bad stored value instead
   // refuses the write through the section's validate hook.
   assertBaseURL(entry.baseURL)
+  assertBaseURL(entry.go.baseURL, 'go.baseURL')
   let current: () => OpencodeZenConfig = () => readConfig(config)
 
-  const resolveApiKey = async (): Promise<string | undefined> => {
-    const ref = current().apiKeyEnv
+  /** The Zen plan's projection: the top-level fields already describe it. */
+  const zenConfig = (): OpencodeZenConfig => current()
+  const goConfig = (): OpencodeZenConfig => goConfigOf(current())
+
+  const resolveApiKeyFor = (ref: () => string) => async (): Promise<string | undefined> => {
+    const env = ref()
     const credentials = ctx.get('credentials')
     const hit = credentials !== undefined
-      ? (await credentials.resolve(credentialRef(ref)))?.value
+      ? (await credentials.resolve(credentialRef(env)))?.value
       // Without the seam the environment is the whole credential plane.
-      : launchEnvironmentOf(ctx).get(ref)?.value
-    if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, name, ref)
+      : launchEnvironmentOf(ctx).get(env)?.value
+    if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, name, env)
     throw new LlmError(
-      `llm-opencode-zen: no credential; the profile resolves ${ref}, which is not set — store ${ref} through the`
+      `llm-opencode-zen: no credential; the profile resolves ${env}, which is not set - store ${env} through the`
       + ' credentials service or export it',
       'MISSING_CREDENTIAL',
     )
@@ -123,100 +161,133 @@ export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void 
       ctx.logger.warn(`llm-opencode-zen: gateway models awaiting usable online metadata: ${ids.join(', ')}`)
     },
   }
-  const adapter = new OpencodeZenAdapter({
-    config: () => current(),
-    resolveApiKey,
-    imageAccess: {
-      resolveAttachments: () => ctx.get('attachments'),
-      resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
-        attachments,
-        hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath),
-        ref,
-      ),
-    },
-    onFallback: logger.fallback,
-    onOmitted: logger.omitted,
-    onReplayDegrade: (reason) => {
-      ctx.logger.warn(`llm-opencode-zen: unusable replay state on assistant history; sending provider-neutral content (${reason})`)
-    },
-  })
-  ctx.plugin(ZenModelsService, { catalog: () => adapter.catalogOf(current()) })
-  let pickerVisibility = current().showDeprecatedModels
-  let pickerWhitelist = whitelistKey(current())
-  let registration: AdapterRegistrationHandle | undefined
+  const imageAccess: OpencodeZenImageAccess = {
+    resolveAttachments: () => ctx.get('attachments'),
+    resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
+      attachments,
+      hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath),
+      ref,
+    ),
+  }
+
   /**
-   * Whether the configuration leaves the pickers anything to offer. An empty
-   * whitelist is a deliberate "no model picked": like the switch itself, that
-   * withdraws the provider rather than parking an empty shell in every picker.
-   */
-  const servesPickers = (): boolean => current().enabled && !withdrawsFromPickers(current().enabledModels)
-  /**
-   * Register the route while the switch is on, the whitelist still lists a
-   * model, and its credential resolves, and drop it when any of them says no. A
-   * route with no key would otherwise sit in every model picker and read as a
-   * usable provider to first-run onboarding, the dormancy llm-pi-ai keeps by
-   * resolving zero routes until configured. Without the credentials seam the
-   * environment answers synchronously, so registration is too.
+   * Build one plan's adapter and route lifecycle. The route registers while
+   * its switch is on, its whitelist still lists a model, and its own credential
+   * resolves, and drops when any of them says no. A route with no key would
+   * otherwise sit in every model picker and read as a usable provider to
+   * first-run onboarding, the dormancy llm-pi-ai keeps by resolving zero routes
+   * until configured. Without the credentials seam the environment answers
+   * synchronously, so registration is too.
    *
    * Nothing else is torn down with the route: model discovery, the settings
    * section, and the credentials listener all stay mounted, so the page that
    * owns the switch stays reachable to turn it back on.
    */
-  const applyRoute = (configured: boolean): void => {
-    if (configured && servesPickers() && registration === undefined) {
-      try {
-        registration = ctx.llm.registerAdapter([PROVIDER_ID], adapter)
-      } catch (error: unknown) {
-        // Most likely DUPLICATE_ADAPTER: a profile in another family
-        // (llm-pi-ai) already owns the route. The refusal names the route;
-        // discovery still registers below, and everything else about the
-        // mount keeps working.
-        ctx.logger.error(`llm-opencode-zen: not registering the "${PROVIDER_ID}" route (${String(error)})`)
+  const makePlan = (
+    route: RouteDescriptor,
+    planConfig: () => OpencodeZenConfig,
+    apiKeyRef: () => string,
+  ): Plan => {
+    const adapter = new OpencodeZenAdapter({
+      provider: route,
+      config: planConfig,
+      resolveApiKey: resolveApiKeyFor(apiKeyRef),
+      imageAccess,
+      onFallback: logger.fallback,
+      onOmitted: logger.omitted,
+      onReplayDegrade: (reason) => {
+        ctx.logger.warn(`llm-opencode-zen: unusable replay state on assistant history for ${route.id}; sending provider-neutral content (${reason})`)
+      },
+    })
+    let registration: AdapterRegistrationHandle | undefined
+    let pickerVisibility = planConfig().showDeprecatedModels
+    let pickerWhitelist = whitelistKey(planConfig())
+    /** Whether this plan's configuration leaves the pickers anything to offer. */
+    const servesPickers = (): boolean =>
+      planConfig().enabled && !withdrawsFromPickers(planConfig().enabledModels)
+    const apply = (configured: boolean): void => {
+      if (configured && servesPickers() && registration === undefined) {
+        try {
+          registration = ctx.llm.registerAdapter([route.id], adapter)
+        } catch (error: unknown) {
+          // Most likely DUPLICATE_ADAPTER: a profile in another family
+          // (llm-pi-ai) or the standalone Go plugin already owns the route. The
+          // refusal names the route; discovery still registers below, and
+          // everything else about the mount keeps working.
+          ctx.logger.error(`llm-opencode-zen: not registering the "${route.id}" route (${String(error)})`)
+        }
+      } else if ((!configured || !servesPickers()) && registration !== undefined) {
+        registration()
+        registration = undefined
+        if (!planConfig().enabled) {
+          ctx.logger.info(`llm-opencode-zen: ${route.id} disabled by configuration; the route and its models are withdrawn`)
+        } else if (withdrawsFromPickers(planConfig().enabledModels)) {
+          ctx.logger.info(`llm-opencode-zen: no model is selected for the ${route.id} pickers; the route and its models are withdrawn`)
+        }
       }
-    } else if ((!configured || !servesPickers()) && registration !== undefined) {
-      registration()
-      registration = undefined
-      if (!current().enabled) {
-        ctx.logger.info('llm-opencode-zen: disabled by configuration; the route and its models are withdrawn')
-      } else if (withdrawsFromPickers(current().enabledModels)) {
-        ctx.logger.info('llm-opencode-zen: no model is selected for the pickers; the route and its models are withdrawn')
+    }
+    const sync = (): void => {
+      const visibility = planConfig().showDeprecatedModels
+      const whitelist = whitelistKey(planConfig())
+      if (pickerVisibility !== visibility || pickerWhitelist !== whitelist) {
+        pickerVisibility = visibility
+        pickerWhitelist = whitelist
+        // Replacing the owned route notifies every session picker without a restart.
+        registration?.replace([route.id])
       }
+      const credentials = ctx.get('credentials')
+      if (credentials === undefined) {
+        apply(launchEnvironmentOf(ctx).get(apiKeyRef())?.value !== undefined)
+        return
+      }
+      void credentials.describe(credentialRef(apiKeyRef()))
+        .then((info) => { apply(info.configured) })
+        .catch((error: unknown) => {
+          ctx.logger.error(`llm-opencode-zen: credential describe failed for ${route.id}; keeping the previous route state (${String(error)})`)
+        })
+    }
+    return {
+      route,
+      adapter,
+      config: planConfig,
+      apply,
+      sync,
+      /* v8 ignore next 3 -- plugin unload never runs in tests: no Context disposal API is exercised */
+      dispose: () => { registration?.() },
     }
   }
-  const syncRoute = (): void => {
-    const visibility = current().showDeprecatedModels
-    const whitelist = whitelistKey(current())
-    if (pickerVisibility !== visibility || pickerWhitelist !== whitelist) {
-      pickerVisibility = visibility
-      pickerWhitelist = whitelist
-      // Replacing the owned route notifies every session picker without a restart.
-      registration?.replace([PROVIDER_ID])
-    }
-    const credentials = ctx.get('credentials')
-    if (credentials === undefined) {
-      applyRoute(launchEnvironmentOf(ctx).get(current().apiKeyEnv)?.value !== undefined)
-      return
-    }
-    void credentials.describe(credentialRef(current().apiKeyEnv))
-      .then((info) => { applyRoute(info.configured) })
-      .catch((error: unknown) => {
-        ctx.logger.error(`llm-opencode-zen: credential describe failed; keeping the previous route state (${String(error)})`)
-      })
-  }
-  syncRoute()
+
+  const zenPlan = makePlan(ZEN_ROUTE, zenConfig, () => current().apiKeyEnv)
+  const goPlan = makePlan(GO_ROUTE, goConfig, () => current().go.apiKeyEnv)
+  const plans = [zenPlan, goPlan]
+  const syncAll = (): void => { for (const plan of plans) plan.sync() }
+
+  ctx.plugin(ZenModelsService, { catalog: () => zenPlan.adapter.catalogOf(zenConfig()) })
+  ctx.plugin(GoModelsService, { catalog: () => goPlan.adapter.catalogOf(goConfig()) })
+  // The Go plan's quota display. It reads the plan's own credential and
+  // endpoint, and its result never reaches the route gate.
+  ctx.plugin(GoUsageService, {
+    baseURL: () => current().go.baseURL,
+    resolveApiKey: resolveApiKeyFor(() => current().go.apiKeyEnv),
+  })
+  syncAll()
   const undiscover = ctx.llm.registerModelDiscovery(name, async (request: LlmModelDiscoveryRequest) => {
-    if (request.provider !== PROVIDER_ID
-      && !(request.baseURL ?? '').includes('opencode.ai')) {
-      throw new LlmError(
-        'llm-opencode-zen discovers only OpenCode zen endpoints; enter this provider\'s models by hand',
-        'DISCOVERY_UNSUPPORTED',
-      )
-    }
-    return discoverCatalogModels(adapter.catalogOf(current()))
+    // Both plans answer on opencode.ai, so the provider id is what separates
+    // them; a bare endpoint is matched on the /zen/go/ segment only the Go
+    // plan's base URL carries.
+    if (request.provider === GO_ROUTE.id) return discoverCatalogModels(goPlan.adapter.catalogOf(goConfig()))
+    if (request.provider === ZEN_ROUTE.id) return discoverCatalogModels(zenPlan.adapter.catalogOf(zenConfig()))
+    const url = request.baseURL ?? ''
+    if (url.includes('/zen/go/')) return discoverCatalogModels(goPlan.adapter.catalogOf(goConfig()))
+    if (url.includes('opencode.ai')) return discoverCatalogModels(zenPlan.adapter.catalogOf(zenConfig()))
+    throw new LlmError(
+      'llm-opencode-zen discovers only OpenCode zen endpoints; enter this provider\'s models by hand',
+      'DISCOVERY_UNSUPPORTED',
+    )
   })
   ctx.effect(() => () => {
     /* v8 ignore start -- plugin unload never runs in tests: no Context disposal API is exercised */
-    registration?.()
+    for (const plan of plans) plan.dispose()
     undiscover()
     /* v8 ignore stop */
   })
@@ -234,37 +305,42 @@ export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void 
     settingsCtx.settings.installSection(ctx, NS, PlainConfig, entry, {
       validate: (value) => {
         assertBaseURL(value.baseURL)
+        assertBaseURL(value.go.baseURL, 'go.baseURL')
       },
       setSource: (source) => {
         current = source
       },
       onChange: () => {
-        // The registered route set follows the credential the section names;
+        // The registered route set follows the credentials the section names;
         // every other fact is per-request and reaches it through `current`.
-        syncRoute()
+        syncAll()
       },
     })
   })
   // Validate before 0.1.7 persists a profile edit, then follow committed refs.
   ctx.on('internal/config', function (_raw, next) {
     const value = next()
-    if (this === ctx.fiber) assertBaseURL(PlainConfig(value).baseURL)
+    if (this === ctx.fiber) {
+      const plain = PlainConfig(value)
+      assertBaseURL(plain.baseURL)
+      assertBaseURL(plain.go.baseURL, 'go.baseURL')
+    }
     return value
   })
   // The event is absent on older Loaders; registering it is harmless there.
-  ctx.on('loader/volatile-update', syncRoute)
-  // A key stored or removed anywhere — the settings page's write-only control
-  // included — flips the route's presence; the event names the reference.
+  ctx.on('loader/volatile-update', syncAll)
+  // A key stored or removed anywhere - the settings page's write-only control
+  // included - flips the route's presence; the event names the reference.
   ctx.inject(['credentials'], (credentialsCtx) => {
     credentialsCtx.on('credentials/reference-updated', (ref) => {
-      if (ref === current().apiKeyEnv) syncRoute()
+      if (ref === current().apiKeyEnv || ref === current().go.apiKeyEnv) syncAll()
     })
     // The seam becomes visible only once its provider is active, which can be
     // after this plugin applied: the boot-time call above then found no seam
     // and fell back to the environment. Sync again here so a credential
     // already stored in the seam registers the route at boot instead of
     // waiting for its next write.
-    syncRoute()
+    syncAll()
   })
-  ctx.logger.info(`llm-opencode-zen: route "${PROVIDER_ID}" registered as ${DISPLAY_NAME}`)
+  ctx.logger.info(`llm-opencode-zen: routes "${ZEN_ROUTE.id}" and "${GO_ROUTE.id}" registered as ${ZEN_ROUTE.displayName} and ${GO_ROUTE.displayName}`)
 }

@@ -12,7 +12,11 @@ import { bindSnapshotSelector } from './support/client.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { OpencodeZenSection } from '../src/client/Section.tsx'
 import type { OpencodeZenSectionProps, OpencodeZenSectionState } from '../src/client/Section.tsx'
-import { OpencodeZenSectionController, type OpencodeZenSettings } from '../src/client/section-controller.ts'
+import {
+  OpencodeZenSectionController,
+  type OpencodeGoPanelState,
+  type OpencodeZenSettings,
+} from '../src/client/section-controller.ts'
 import { stubSettingsScope } from './support/client.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -30,7 +34,7 @@ function field(text: string, rest: Partial<OpencodeZenSectionState['baseURL']> =
 
 type SectionField = 'baseURL' | 'apiKeyEnv' | 'refreshMinutes' | 'streamIdleTimeoutMs'
   | 'maxRequestImageBytes' | 'requestImagePixelBudget' | 'requestImageMaxBytes' | 'apiKey' | 'models'
-  | 'modelLimits' | 'modelLimitDraft' | 'checkedModels'
+  | 'modelLimits' | 'modelLimitDraft' | 'checkedModels' | 'go'
 
 const settled: Omit<OpencodeZenSectionState, SectionField> = {
   available: true,
@@ -57,6 +61,29 @@ function listing(entries: readonly ModelEntry[]) {
   }
 }
 
+/**
+ * The Go plan's panel. A settled case starts with its listing unread and its
+ * quota unprobed, which is what the page finds before it asks.
+ */
+function goPanel(overrides: Partial<OpencodeGoPanelState> = {}): OpencodeGoPanelState {
+  return {
+    enabled: true,
+    showDeprecatedModels: false,
+    checkedModels: [],
+    checkedCount: 0,
+    apiKeyEnv: field('OPENCODE_API_KEY'),
+    baseURL: field('https://opencode.ai/zen/go/v1'),
+    apiKey: field(''),
+    apiKeyConfigured: false,
+    apiKeyWritable: true,
+    models: { status: 'idle' },
+    modelLimits: field(''),
+    modelLimitDraft: {},
+    usage: { status: 'idle' },
+    ...overrides,
+  }
+}
+
 function stateOf(overrides: Partial<OpencodeZenSectionState> = {}): OpencodeZenSectionState {
   return {
     ...settled,
@@ -72,6 +99,7 @@ function stateOf(overrides: Partial<OpencodeZenSectionState> = {}): OpencodeZenS
     modelLimitDraft: {},
     models: { status: 'idle' },
     checkedModels: [],
+    go: goPanel(),
     ...overrides,
   }
 }
@@ -85,6 +113,10 @@ function actions() {
     loadModels: vi.fn(),
     setModelChecked: vi.fn(),
     clearModelChecks: vi.fn(),
+    loadGoModels: vi.fn(),
+    setGoModelChecked: vi.fn(),
+    clearGoModelChecks: vi.fn(),
+    loadUsage: vi.fn(),
   }
 }
 
@@ -504,6 +536,28 @@ describe('OpencodeZenSectionController through the component', () => {
       const user = { ...host.scope.getSnapshot().user as object }
       host.publish({ value: { ...section, [field]: value }, user: { ...user, [field]: value } })
     })
+    // A nested field is written as a path op, the way the Host applies one.
+    host.mutate.mockImplementation((ops: readonly { op: 'set' | 'unset'; path: readonly string[]; value?: unknown }[]) => {
+      const apply = (layer: unknown): Record<string, unknown> => {
+        const next = structuredClone((layer ?? {}) as Record<string, unknown>)
+        for (const op of ops) {
+          const path = [...op.path]
+          const leaf = path.pop()!
+          let node = next
+          for (const key of path) {
+            if (typeof node[key] !== 'object' || node[key] === null) node[key] = {}
+            node = node[key] as Record<string, unknown>
+          }
+          if (op.op === 'set') node[leaf] = op.value
+          else delete node[leaf]
+        }
+        return next
+      }
+      host.publish({
+        value: apply(host.scope.getSnapshot().value) as never,
+        user: apply(host.scope.getSnapshot().user) as never,
+      })
+    })
   }
 
   function mount(controller: OpencodeZenSectionController) {
@@ -751,5 +805,109 @@ describe('OpencodeZenSectionController through the component', () => {
     await act(async () => { screen.getByText(en.save).click() })
 
     await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('baseURL', 'https://edited.test/v1') })
+  })
+
+  it('stages the Go plan on its own switch and writes it as one nested path op', async () => {
+    const host = modelHost()
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const controller = controllerFor(host)
+    mount(controller)
+    try {
+      await act(async () => { await Promise.resolve() })
+      openAdvanced()
+      fireEvent.change(screen.getByLabelText(en.goBaseURLLabel), { target: { value: 'https://go.test/v1' } })
+      fireEvent.click(screen.getByRole('switch', { name: en.goEnabledLabel }))
+
+      // Staged: one save writes both plans, and nothing has reached the Host yet.
+      expect(host.mutate).not.toHaveBeenCalled()
+      expect(host.set).not.toHaveBeenCalled()
+
+      await act(async () => { screen.getByText(en.save).click() })
+      await vi.waitFor(() => {
+        expect(host.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['go', 'baseURL'], value: 'https://go.test/v1' }])
+      })
+      // The Go plan's switch is the nested one; Zen's stays its own top-level field.
+      expect(host.mutate).toHaveBeenCalledWith([{ op: 'set', path: ['go', 'enabled'], value: false }])
+      expect(host.set).not.toHaveBeenCalledWith('enabled', false)
+    } finally {
+      controller.dispose()
+    }
+  })
+
+  it('keeps each plan whitelist apart', async () => {
+    const host = modelHost()
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const controller = controllerFor(host)
+    const face = controller.inject()
+    mount(controller)
+    try {
+      await act(async () => { await Promise.resolve() })
+      await vi.waitFor(() => { expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(1) })
+
+      // Neither plan's whitelist is stored yet, so both read as fully checked.
+      const state = () => face.hooks.opencodeZen.getSnapshot()
+      expect(state().checkedModels).toEqual(['a', 'b'])
+      expect(state().go.checkedModels).toEqual(['a', 'b'])
+
+      face.setModelChecked('b', false)
+      expect(state().checkedModels).toEqual(['a'])
+      expect(state().go.checkedModels).toEqual(['a', 'b'])
+
+      face.setGoModelChecked('a', false)
+      expect(state().go.checkedModels).toEqual(['b'])
+      // Zen's own list was never narrowed by the Go panel's edit.
+      expect(state().checkedModels).toEqual(['a'])
+    } finally {
+      controller.dispose()
+    }
+  })
+})
+
+describe('both plans on one page', () => {
+  const goUsage = {
+    rolling: { status: 'ok' as const, percent: 20, resetsAt: '2026-09-21T00:00:00Z' },
+    weekly: { status: 'rate-limited' as const, percent: 100, resetsAt: '2026-09-22T00:00:00Z' },
+    monthly: { status: 'ok' as const, percent: 41, resetsAt: '2026-09-30T00:00:00Z' },
+  }
+
+  it('gives each plan its own editor, landmarks and control ids', () => {
+    renderSection(stateOf({
+      models: listing([{ id: 'a', name: 'Alpha' }]),
+      checkedModels: ['a'],
+      go: goPanel({
+        models: listing([{ id: 'g', name: 'Gamma' }]),
+        checkedModels: ['g'],
+        usage: { status: 'subscribed', usage: goUsage },
+      }),
+    }))
+
+    const zenList = screen.getByRole('navigation', { name: en.modelsLabel })
+    const goList = screen.getByRole('navigation', { name: en.goModelsLabel })
+    expect(within(zenList).getByRole('checkbox', { name: t('modelVisibleLabel', { name: 'Alpha' }) })).toBeTruthy()
+    expect(within(goList).getByRole('checkbox', { name: t('goModelVisibleLabel', { name: 'Gamma' }) })).toBeTruthy()
+    // Two editors, two sets of ids: no control is addressed twice.
+    for (const id of ['opencode-zen-model-filter', 'opencode-go-model-filter',
+      'opencode-zen-contextWindow-a', 'opencode-go-contextWindow-g']) {
+      expect(document.querySelectorAll(`#${id}`)).toHaveLength(1)
+    }
+    // The quota windows carry their own values and reset times.
+    expect(screen.getByRole('progressbar', { name: en.usage_rolling }).getAttribute('value')).toBe('20')
+    expect(screen.getByRole('progressbar', { name: en.usage_weekly }).getAttribute('value')).toBe('100')
+    expect(screen.getByText(`${en.usageResets} ${new Date(goUsage.monthly.resetsAt).toLocaleString()}`)).toBeTruthy()
+  })
+
+  it('words the Go quota by what the endpoint actually said', () => {
+    renderSection(stateOf({ go: goPanel({ usage: { status: 'not-subscribed' } }) }))
+    expect(screen.getByText(en.goQuotaNotSubscribed)).toBeTruthy()
+    cleanup()
+
+    renderSection(stateOf({ go: goPanel({ usage: { status: 'unknown', message: 'offline at 10.0.0.1' } }) }))
+    expect(screen.getByText(en.goQuotaUnknown)).toBeTruthy()
+    // The Host's diagnostic stays out of the page, the way a response body must.
+    expect(screen.queryByText(/offline at/)).toBeNull()
+    cleanup()
+
+    renderSection(stateOf({ go: goPanel({ usage: { status: 'idle' } }) }))
+    expect(screen.getByText(en.goQuotaIdle)).toBeTruthy()
   })
 })

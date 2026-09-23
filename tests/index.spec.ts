@@ -85,8 +85,8 @@ describe('llm-opencode-zen plugin mount', () => {
     await ctx.plugin(LlmRuntime)
     ctx.llm.registerAdapter(['opencode-zen'], new StubAdapter())
 
-    // The conflicting registration is logged, not thrown, and discovery — whose
-    // value does not depend on owning the route — still registers.
+    // The conflicting registration is logged, not thrown, and discovery - whose
+    // value does not depend on owning the route - still registers.
     apply(ctx, configOf(gateway.url))
 
     const models = await ctx.llm.discoverModels('llm-opencode-zen', { provider: 'opencode-zen' })

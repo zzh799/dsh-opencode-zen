@@ -1,9 +1,11 @@
 /**
- * The OpenCode Zen settings section. It leads with the one value a user has to
- * supply — the API key, stored write-only through the credentials domain — and
- * the models the gateway currently serves, then keeps the credential
- * reference, the endpoint, and the adapter tuning fields in the
- * `llm-opencode-zen` namespace behind a collapsed disclosure.
+ * The OpenCode settings section. One page serves both plans: the Zen
+ * pay-as-you-go gateway, whose fields are the document's top-level ones, and
+ * the Go subscription, whose fields live in the `go` block. Each panel leads
+ * with its own switch and the key a user has to supply (stored write-only
+ * through the credentials domain), then the models that gateway currently
+ * serves; the credential references, the endpoints, and the adapter tuning
+ * both plans share sit behind one collapsed disclosure.
  */
 
 import { useEffect, useState } from 'react'
@@ -11,12 +13,16 @@ import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
+  GoUsageState,
+  OpencodeGoPanelState,
   OpencodeZenModels,
+  OpencodeZenPanelState,
   OpencodeZenSectionFace,
   OpencodeZenSectionState,
 } from './section-controller.ts'
+import { GoUsagePanel } from './GoUsagePanel.tsx'
 import { ModelEditor } from './ModelEditor.tsx'
-import type { en } from './locales.ts'
+import { goEditorCopy, type en } from './locales.ts'
 import css from './Section.module.css'
 
 // 0.1.7 names icons by stroke weight; older hosts name them by pixel size.
@@ -42,7 +48,7 @@ interface ValueFieldProps {
   id: string
   label: string
   hint: string
-  field: OpencodeZenSectionState['baseURL']
+  field: { text: string; overridden: boolean; invalid: boolean }
   invalidLabel: string
   overriddenLabel: string
   resetLabel: string
@@ -96,39 +102,142 @@ function ValueField(props: ValueFieldProps) {
 }
 
 /**
- * The gateway's model listing in the state the page last read.
+ * A plan's model listing in the state the page last read.
  * @param props.models - the listing state the controller published.
- * @param props.t - section copy.
+ * @param props.copy - the wording that must differ between the two plans.
  * @returns the listing body: a progress line, the Host diagnostic, or an empty
  *   body once the capacity table can show the complete model list.
  */
-function ModelsBody({ models, t }: {
+function ModelsBody({ models, copy }: {
   models: OpencodeZenModels
-  t: SectionTranslate
+  copy: { loading: string; failed: string; empty: string }
 }) {
   if (models.status === 'failed') {
     return (
       <>
-        <p className={css.failedNote} role="alert">{t('modelsFailed')}</p>
+        <p className={css.failedNote} role="alert">{copy.failed}</p>
         <p className={css.hint}>{models.message}</p>
       </>
     )
   }
-  if (models.status !== 'ready') return <p className={css.hint} role="status" aria-live="polite">{t('modelsLoading')}</p>
-  if (models.count === 0) return <p className={css.hint}>{t('modelsEmpty')}</p>
+  if (models.status !== 'ready') return <p className={css.hint} role="status" aria-live="polite">{copy.loading}</p>
+  if (models.count === 0) return <p className={css.hint}>{copy.empty}</p>
   return null
 }
 
+/** One plan's staged on/off switch. */
+function EnableSwitch({ label, hint, on, disabled, onChange }: {
+  label: string
+  hint: string
+  on: boolean
+  disabled: boolean
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <div className={css.field}>
+      <div className={css.head}>
+        <span className={css.label}>{label}</span>
+        <Switch
+          checked={on}
+          label={label}
+          // The settings document being read-only is what locks the switch;
+          // the credential's own writability is unrelated to this field.
+          disabled={disabled}
+          // Staged like every other field: the Save button below is what
+          // writes it, and what it writes is what the page shows.
+          onChange={onChange}
+        />
+      </div>
+      <p className={css.hint}>{hint}</p>
+    </div>
+  )
+}
+
 /**
- * Render the OpenCode Zen settings page.
+ * One plan's write-only credential control.
+ * @param props.id - DOM id of the input, which also names it on the wire.
+ * @param props.writeField - the form field the edit stages under.
+ * @returns the disclosure holding the input.
+ */
+function KeyControl({ id, label, hint, notWritableLabel, configured, configuredLabel, missingLabel, field, writable, onEdit }: {
+  id: string
+  label: string
+  hint: string
+  notWritableLabel: string
+  configured: boolean
+  configuredLabel: string
+  missingLabel: string
+  field: { text: string }
+  writable: boolean
+  onEdit: (text: string) => void
+}) {
+  return (
+    <details className={css.keySection} open={!configured || field.text.length > 0}>
+      <summary className={css.head}>
+        <span className={css.label}>{label}</span>
+        <span className={css.badges}>
+          <Tag tone={configured ? 'success' : 'warning'}>
+            {configured ? configuredLabel : missingLabel}
+          </Tag>
+        </span>
+      </summary>
+      <input
+        id={id}
+        aria-label={label}
+        name={id}
+        className={css.input}
+        type="password"
+        autoComplete="off"
+        aria-describedby={`${id}-hint`}
+        value={field.text}
+        // The credentials domain accepts a key even when the settings document
+        // itself is read-only; its own writability is what disables this
+        // control - a key sourced from the environment cannot be written here.
+        disabled={!writable}
+        onChange={(event) => { onEdit(event.target.value) }}
+      />
+      <p id={`${id}-hint`} className={css.hint}>{writable ? hint : notWritableLabel}</p>
+    </details>
+  )
+}
+
+/** One plan's model listing header: its count and its refresh control. */
+function ModelsHeader({ label, count, countLabel, refreshLabel, loading, onRefresh }: {
+  label: string
+  count: OpencodeZenModels
+  countLabel: string
+  refreshLabel: string
+  loading: boolean
+  onRefresh: () => void
+}) {
+  return (
+    <div className={css.head}>
+      <span className={css.label}>{label}</span>
+      <span className={css.badges}>
+        {count.status === 'ready' ? <Tag tone="neutral">{countLabel}</Tag> : null}
+        <button type="button" className={css.reset} disabled={loading} onClick={onRefresh}>
+          {refreshLabel}
+        </button>
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Render the OpenCode settings page.
  * @param props - locale copy, the page snapshot, and its form actions.
  * @returns the section.
  */
 export function OpencodeZenSection(props: OpencodeZenSectionProps) {
-  const { useOpencodeZen, edit, resetField, save, discard, loadModels, setModelChecked, clearModelChecks, t } = props
+  const {
+    useOpencodeZen, edit, resetField, save, discard, loadModels, setModelChecked, clearModelChecks,
+    loadGoModels, setGoModelChecked, clearGoModelChecks, loadUsage, t,
+  } = props
   if (useOpencodeZen === undefined || edit === undefined || resetField === undefined
     || save === undefined || discard === undefined || loadModels === undefined
-    || setModelChecked === undefined || clearModelChecks === undefined || t === undefined) return null
+    || setModelChecked === undefined || clearModelChecks === undefined
+    || loadGoModels === undefined || setGoModelChecked === undefined || clearGoModelChecks === undefined
+    || loadUsage === undefined || t === undefined) return null
   return (
     <Loaded
       state={useOpencodeZen(snapshot => snapshot)}
@@ -140,29 +249,33 @@ export function OpencodeZenSection(props: OpencodeZenSectionProps) {
       loadModels={loadModels}
       setModelChecked={setModelChecked}
       clearModelChecks={clearModelChecks}
+      loadGoModels={loadGoModels}
+      setGoModelChecked={setGoModelChecked}
+      clearGoModelChecks={clearGoModelChecks}
+      loadUsage={loadUsage}
     />
   )
 }
 
+/** Every action the loaded page calls, as the slot delivered them. */
+type LoadedActions = Omit<OpencodeZenSectionInjected, 'hooks' | 'useOpencodeZen'>
+
 /** The page once every injected seat is present. */
-function Loaded(props: {
-  state: OpencodeZenSectionState
-  t: SectionTranslate
-  edit: (field: string, text: string) => void
-  resetField: (field: string) => void
-  save: () => void
-  discard: () => void
-  loadModels: () => void
-  setModelChecked: (id: string, checked: boolean) => void
-  clearModelChecks: () => void
-}) {
-  const { t, state, loadModels } = props
+function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
+  const { t, state, loadModels, loadGoModels, loadUsage, setModelChecked, setGoModelChecked } = props
   const [advanced, setAdvanced] = useState(false)
   // The shell mounts only the open section, so a mount is the page being
-  // opened: read the listing once, and let the button re-read it afterwards.
+  // opened: read each listing once, let the buttons re-read them afterwards,
+  // and ask the Go endpoint about the quota in the same breath.
   useEffect(() => {
     if (state.available && state.models.status === 'idle') loadModels()
   }, [state.available, state.models.status, loadModels])
+  useEffect(() => {
+    if (state.available && state.go.models.status === 'idle') loadGoModels()
+  }, [state.available, state.go.models.status, loadGoModels])
+  useEffect(() => {
+    if (state.available && state.go.usage.status === 'idle') loadUsage()
+  }, [state.available, state.go.usage.status, loadUsage])
   if (!state.available) {
     return <p className={css.intro}>{t('unavailable')}</p>
   }
@@ -174,6 +287,7 @@ function Loaded(props: {
     disabled,
   }
   const advancedOverridden = state.apiKeyEnv.overridden || state.baseURL.overridden
+    || state.go.apiKeyEnv.overridden || state.go.baseURL.overridden
     || state.refreshMinutes.overridden || state.streamIdleTimeoutMs.overridden
     || state.maxRequestImageBytes.overridden || state.requestImagePixelBudget.overridden
     || state.requestImageMaxBytes.overridden
@@ -216,6 +330,24 @@ function Loaded(props: {
                 {...fieldProps}
                 onEdit={(text) => { props.edit('baseURL', text) }}
                 onReset={() => { props.resetField('baseURL') }}
+              />
+              <ValueField
+                id="opencode-zen-go-api-key-env"
+                label={t('goApiKeyEnvLabel')}
+                hint={t('goApiKeyEnvHint')}
+                field={state.go.apiKeyEnv}
+                {...fieldProps}
+                onEdit={(text) => { props.edit('go.apiKeyEnv', text) }}
+                onReset={() => { props.resetField('go.apiKeyEnv') }}
+              />
+              <ValueField
+                id="opencode-zen-go-base-url"
+                label={t('goBaseURLLabel')}
+                hint={t('goBaseURLHint')}
+                field={state.go.baseURL}
+                {...fieldProps}
+                onEdit={(text) => { props.edit('go.baseURL', text) }}
+                onReset={() => { props.resetField('go.baseURL') }}
               />
               <ValueField
                 id="opencode-zen-refresh-minutes"
@@ -271,80 +403,68 @@ function Loaded(props: {
           )
           : null}
       </div>
-      <div className={css.field}>
-        <div className={css.head}>
-          <span className={css.label}>{t('enabledLabel')}</span>
-          <Switch
-            checked={state.enabled}
-            label={t('enabledLabel')}
-            // The settings document being read-only is what locks the switch;
-            // the credential's own writability is unrelated to this field.
-            disabled={disabled}
-            // Staged like every other field: the Save button below is what
-            // writes it, and what it writes is what the page shows.
-            onChange={(next) => { props.edit('enabled', String(next)) }}
-          />
+      <section className={css.planPanel} aria-label={t('planZenTitle')}>
+        <div className={css.planHead}>
+          <h3 className={css.planTitle}>{t('planZenTitle')}</h3>
+          <Tag tone="neutral">{t('planPayAsYouGo')}</Tag>
         </div>
-        <p className={css.hint}>{state.enabled ? t('enabledHint') : t('enabledOff')}</p>
-      </div>
-      <details className={css.keySection} open={!state.apiKeyConfigured || state.apiKey.text.length > 0}>
-        <summary className={css.head}>
-          <span className={css.label}>{t('keyLabel')}</span>
-          <span className={css.badges}>
-            <Tag tone={state.apiKeyConfigured ? 'success' : 'warning'}>
-              {state.apiKeyConfigured ? t('keyConfigured') : t('keyMissing')}
-            </Tag>
-          </span>
-        </summary>
-        <input
-          id="opencode-zen-key"
-          aria-label={t('keyLabel')}
-          name="api-key"
-          className={css.input}
-          type="password"
-          autoComplete="off"
-          aria-describedby="opencode-zen-key-hint"
-          value={state.apiKey.text}
-          // The credentials domain accepts a key even when the settings document
-          // itself is read-only; its own writability is what disables this
-          // control — a key sourced from the environment cannot be written here.
-          disabled={!state.apiKeyWritable}
-          onChange={(event) => { props.edit('apiKey', event.target.value) }}
+        <EnableSwitch
+          label={t('enabledLabel')}
+          hint={state.enabled ? t('enabledHint') : t('enabledOff')}
+          on={state.enabled}
+          disabled={disabled}
+          onChange={(next) => { props.edit('enabled', String(next)) }}
         />
-        <p id="opencode-zen-key-hint" className={css.hint}>{state.apiKeyWritable ? t('keyHint') : t('keyNotWritable')}</p>
-      </details>
-      <div className={css.field}>
-        <div className={css.head}>
-          <span className={css.label}>{t('modelsLabel')}</span>
-          <span className={css.badges}>
-            {state.models.status === 'ready'
-              ? <Tag tone="neutral">{t('modelsCount', { count: state.models.count })}</Tag>
-              : null}
-            <button
-              type="button"
-              className={css.reset}
-              disabled={state.models.status === 'loading'}
-              onClick={loadModels}
-            >
-              {t('modelsRefresh')}
-            </button>
-          </span>
+        <KeyControl
+          id="opencode-zen-key"
+          label={t('keyLabel')}
+          hint={t('keyHint')}
+          notWritableLabel={t('keyNotWritable')}
+          configured={state.apiKeyConfigured}
+          configuredLabel={t('keyConfigured')}
+          missingLabel={t('keyMissing')}
+          field={state.apiKey}
+          writable={state.apiKeyWritable}
+          onEdit={(text) => { props.edit('apiKey', text) }}
+        />
+        <div className={css.field}>
+          <ModelsHeader
+            label={t('modelsLabel')}
+            count={state.models}
+            countLabel={t('modelsCount', { count: state.models.status === 'ready' ? state.models.count : 0 })}
+            refreshLabel={t('modelsRefresh')}
+            loading={state.models.status === 'loading'}
+            onRefresh={loadModels}
+          />
+          <ModelsBody models={state.models} copy={{
+            loading: t('modelsLoading'), failed: t('modelsFailed'), empty: t('modelsEmpty'),
+          }} />
         </div>
-        <ModelsBody models={state.models} t={t} />
-      </div>
-      <div className={css.field}>
-        <div className={css.head}>
-          <span className={css.label}>{t('showDeprecatedLabel')}</span>
-          <Switch checked={state.showDeprecatedModels} label={t('showDeprecatedLabel')}
-            disabled={disabled} onChange={(next) => { props.edit('showDeprecatedModels', String(next)) }} />
+        <div className={css.field}>
+          <div className={css.head}>
+            <span className={css.label}>{t('showDeprecatedLabel')}</span>
+            <Switch checked={state.showDeprecatedModels} label={t('showDeprecatedLabel')}
+              disabled={disabled} onChange={(next) => { props.edit('showDeprecatedModels', String(next)) }} />
+          </div>
+          <p className={css.hint}>{t('showDeprecatedHint')}</p>
+          <ModelEditor models={state.models} draft={state.modelLimitDraft}
+            checked={state.checkedModels} checkedCount={state.checkedCount}
+            t={t} disabled={disabled || state.saving}
+            onEdit={next => { props.edit('modelLimits', JSON.stringify(next)) }}
+            onToggleCheck={setModelChecked} onClearChecks={props.clearModelChecks} />
         </div>
-        <p className={css.hint}>{t('showDeprecatedHint')}</p>
-        <ModelEditor models={state.models} draft={state.modelLimitDraft}
-          checked={state.checkedModels} checkedCount={state.checkedCount}
-          t={t} disabled={disabled || state.saving}
-          onEdit={next => { props.edit('modelLimits', JSON.stringify(next)) }}
-          onToggleCheck={props.setModelChecked} onClearChecks={props.clearModelChecks} />
-      </div>
+      </section>
+      <GoPanel
+        panel={state.go}
+        t={t}
+        disabled={disabled}
+        saving={state.saving}
+        onEdit={props.edit}
+        onRefreshModels={loadGoModels}
+        onToggleCheck={setGoModelChecked}
+        onClearChecks={props.clearGoModelChecks}
+        onRefreshUsage={loadUsage}
+      />
       {disabled ? <p className={css.hint}>{t('readOnly')}</p> : null}
       </div>
       <div className={css.actions}>
@@ -357,5 +477,87 @@ function Loaded(props: {
         {state.failed ? <p className={css.failedNote}>{t('savedFailed')}</p> : null}
       </div>
     </div>
+  )
+}
+
+/**
+ * The Go subscription's panel. Its own copy keeps every landmark and control
+ * name distinct from the Zen panel above it, which matters to assistive
+ * technology and to anything reading this page's structure.
+ */
+function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggleCheck, onClearChecks, onRefreshUsage }: {
+  panel: OpencodeGoPanelState
+  t: SectionTranslate
+  disabled: boolean
+  saving: boolean
+  onEdit: (field: string, text: string) => void
+  onRefreshModels: () => void
+  onToggleCheck: (id: string, checked: boolean) => void
+  onClearChecks: () => void
+  onRefreshUsage: () => void
+}) {
+  return (
+    <section className={css.planPanel} aria-label={t('planGoTitle')}>
+      <div className={css.planHead}>
+        <h3 className={css.planTitle}>{t('planGoTitle')}</h3>
+        <Tag tone="neutral">{t('planSubscription')}</Tag>
+      </div>
+      <p className={css.hint}>{t('goIntro')}</p>
+      <EnableSwitch
+        label={t('goEnabledLabel')}
+        hint={panel.enabled ? t('goEnabledHint') : t('goEnabledOff')}
+        on={panel.enabled}
+        disabled={disabled}
+        onChange={(next) => { onEdit('go.enabled', String(next)) }}
+      />
+      <KeyControl
+        id="opencode-zen-go-key"
+        label={t('goKeyLabel')}
+        hint={t('goKeyHint')}
+        notWritableLabel={t('goKeyNotWritable')}
+        configured={panel.apiKeyConfigured}
+        configuredLabel={t('goKeyConfigured')}
+        missingLabel={t('goKeyMissing')}
+        field={panel.apiKey}
+        writable={panel.apiKeyWritable}
+        onEdit={(text) => { onEdit('goApiKey', text) }}
+      />
+      <div className={css.field}>
+        <ModelsHeader
+          label={t('goModelsLabel')}
+          count={panel.models}
+          countLabel={t('modelsCount', { count: panel.models.status === 'ready' ? panel.models.count : 0 })}
+          refreshLabel={t('goModelsRefresh')}
+          loading={panel.models.status === 'loading'}
+          onRefresh={onRefreshModels}
+        />
+        <ModelsBody models={panel.models} copy={{
+          loading: t('goModelsLoading'), failed: t('goModelsFailed'), empty: t('goModelsEmpty'),
+        }} />
+      </div>
+      <div className={css.field}>
+        <div className={css.head}>
+          <span className={css.label}>{t('goQuotaLabel')}</span>
+          <button type="button" className={css.reset} disabled={panel.usage.status === 'loading'} onClick={onRefreshUsage}>
+            {t('goQuotaRefresh')}
+          </button>
+        </div>
+        <p className={css.hint}>{t('goQuotaHint')}</p>
+        <GoUsagePanel usage={panel.usage} t={t} />
+      </div>
+      <div className={css.field}>
+        <div className={css.head}>
+          <span className={css.label}>{t('goShowDeprecatedLabel')}</span>
+          <Switch checked={panel.showDeprecatedModels} label={t('goShowDeprecatedLabel')}
+            disabled={disabled} onChange={(next) => { onEdit('go.showDeprecatedModels', String(next)) }} />
+        </div>
+        <p className={css.hint}>{t('goShowDeprecatedHint')}</p>
+        <ModelEditor models={panel.models} draft={panel.modelLimitDraft}
+          checked={panel.checkedModels} checkedCount={panel.checkedCount}
+          t={t} disabled={disabled || saving} idPrefix="opencode-go" copy={goEditorCopy}
+          onEdit={next => { onEdit('go.modelLimits', JSON.stringify(next)) }}
+          onToggleCheck={onToggleCheck} onClearChecks={onClearChecks} />
+      </div>
+    </section>
   )
 }

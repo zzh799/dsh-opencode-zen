@@ -1,4 +1,4 @@
-/* OpenCode Go settings page: field rows, badges, hints, and actions. */
+/* OpenCode settings page: two plan panels, field rows, badges, hints, and actions. */
 
 .page {
   display: flex;
@@ -309,3 +309,21 @@
 .keySection summary::-webkit-details-marker { display: none; }
 .keySection > .input { width: 100%; box-sizing: border-box; margin: 10px 0 6px; }
 .keySection summary:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+
+/* One plan's panel: a titled group holding its switch, key, quota, and models. */
+.planPanel { display: flex; flex-direction: column; }
+.planPanel + .planPanel { margin-top: 4px; border-top: 0.5px solid var(--dsw-alias-border-l4); }
+.planHead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 18px 0 2px; }
+.planTitle { margin: 0; font-size: 14px; color: var(--dsw-alias-label-primary); }
+.planPanel > .hint { margin: 0 0 4px; }
+
+/* The Go plan's quota windows, as the usage endpoint reported them. */
+.usage { display: flex; flex-direction: column; gap: 12px; }
+.usageWindow { display: flex; flex-direction: column; gap: 4px; }
+.usageRow { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.usageRow strong { color: var(--dsw-alias-label-primary); }
+.usageWindow progress { display: block; width: 100%; height: 5px; accent-color: var(--dsw-alias-brand-primary); }
+.usageWindow progress::-webkit-progress-bar { background: var(--dsw-alias-bg-layer-3); border-radius: 4px; }
+.usageWindow progress::-webkit-progress-value { background: var(--dsw-alias-brand-primary); border-radius: 4px; }
+.usageWindow progress::-moz-progress-bar { background: var(--dsw-alias-brand-primary); border-radius: 4px; }
+.usageWindow .hint { margin: 0; }

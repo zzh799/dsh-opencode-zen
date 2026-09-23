@@ -24,7 +24,9 @@ try {
   await ctx.plugin(Loader)
   await ctx.loader.create({ name: '@deepseek-ai/dsh-llm' })
   const id = await ctx.loader.create({ id: 'opencode-zen', name: new URL('../../lib/index.js', import.meta.url).href,
-    config: { apiKeyEnv: 'OPENCODE_ZEN_COMPAT_KEY' } })
+    // The Go plan defaults on and shares the OpenCode key reference, which
+    // would register a second route here and break the empty-picker assertions.
+    config: { apiKeyEnv: 'OPENCODE_ZEN_COMPAT_KEY', go: { enabled: false } } })
   await ctx.loader.await()
   const entry = ctx.loader.resolve(id)
   assert.ok(entry.fiber, 'plugin mounts')
@@ -73,7 +75,15 @@ try {
   assert.equal(entry.fiber, fiber, 'reset must preserve the running plugin')
   await assert.rejects(ctx.settings.update('opencode-zen', { baseURL: 'not-a-url' }), /not a valid URL/)
   assert.equal(entry.fiber, fiber)
-  console.log('PASS: profile settings, live updates, capacities, reset, route toggle, validation')
+  // A nested write merges into the Go plan's block rather than replacing it,
+  // and the nested validator refuses a bad endpoint by name.
+  await ctx.settings.update('opencode-zen', { go: { apiKeyEnv: 'OPENCODE_GO_COMPAT_KEY' } })
+  assert.equal(view().value.go.enabled, false, 'a nested write keeps the sibling Go fields')
+  assert.equal(view().value.go.baseURL, 'https://opencode.ai/zen/go/v1')
+  await assert.rejects(ctx.settings.update('opencode-zen', { go: { baseURL: 'not-a-url' } }),
+    /go\.baseURL "not-a-url" is not a valid URL/)
+  assert.equal(entry.fiber, fiber)
+  console.log('PASS: profile settings, live updates, capacities, reset, route toggle, validation, nested Go plan')
 } finally {
   await ctx.fiber.dispose()
 }

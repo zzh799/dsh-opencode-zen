@@ -2,6 +2,7 @@
 import type { Api, Model, ModelCost, ModelThinkingLevel, ThinkingLevelMap } from '@earendil-works/pi-ai'
 
 import { validReleaseDate, type ZenModel } from './models-contract.ts'
+import { ZEN_ROUTE, type RouteDescriptor } from './providers.ts'
 
 export const MODEL_METADATA_URL = 'https://models.dev/api.json'
 
@@ -63,16 +64,27 @@ export function modelBaseURL(api: Api, baseURL: string): string {
 }
 
 /**
- * Only read the `opencode` record (models.dev's key for OpenCode Zen; the
- * sibling `opencode-go` record belongs to the Go subscription this plugin no
- * longer serves). Online endpoints, headers and credentials are deliberately
- * ignored: model traffic always stays on the configured gateway.
- * A bad entry is isolated instead of discarding every other model.
+ * Read one plan's record from models.dev: `opencode` for Zen, `opencode-go`
+ * for the Go subscription. The route decides which, so a plan can never pick
+ * up its sibling's protocol, capacities or deprecation flags. Online
+ * endpoints, headers and credentials are deliberately ignored: model traffic
+ * always stays on the configured gateway. A bad entry is isolated instead of
+ * discarding every other model.
+ * @param body - the parsed models.dev document.
+ * @param baseURL - the gateway base the models are called on.
+ * @param builtin - pi-ai's shipped table for this plan, the compatibility hints.
+ * @param route - the plan whose record to read; the Zen plan by default.
+ * @returns the resolved models, their details, and per-id errors.
  */
-export function readModelMetadata(body: unknown, baseURL: string, builtin: ReadonlyMap<string, Model<Api>>): ModelMetadata {
-  const provider = record(record(body)['opencode'])
+export function readModelMetadata(
+  body: unknown,
+  baseURL: string,
+  builtin: ReadonlyMap<string, Model<Api>>,
+  route: RouteDescriptor = ZEN_ROUTE,
+): ModelMetadata {
+  const provider = record(record(body)[route.metadataKey])
   if (provider.models === null || typeof provider.models !== 'object' || Array.isArray(provider.models)) {
-    throw new Error('models.dev has no opencode models object')
+    throw new Error(`models.dev has no ${route.metadataKey} models object`)
   }
   const entries = record(provider.models)
   const models = new Map<string, Model<Api>>()
@@ -119,7 +131,7 @@ export function readModelMetadata(body: unknown, baseURL: string, builtin: Reado
       models.set(id, {
         id,
         name: typeof metadata.name === 'string' && metadata.name.length > 0 ? metadata.name : id,
-        provider: 'opencode-zen', api, baseUrl: modelBaseURL(api, baseURL),
+        provider: route.id, api, baseUrl: modelBaseURL(api, baseURL),
         reasoning: metadata.reasoning,
         thinkingLevelMap: thinkingLevels(metadata, known),
         input: input.includes('image') ? ['text', 'image'] : ['text'],

@@ -74,6 +74,10 @@ try {
   await once(server, 'listening')
   const config = plugin.PlainConfig({ apiKeyEnv: 'OPENCODE_ZEN_COMPAT_KEY',
     baseURL: `http://127.0.0.1:${server.address().port}`, maxRequestImageBytes: 8,
+    // This fixture describes the Zen plan; the Go plan defaults on and shares
+    // the OpenCode key reference, so leaving it enabled would register a route
+    // against the real endpoint in every host of the matrix.
+    go: { enabled: false },
     modelLimits: { 'compat-model': { contextWindow: 50000, maxTokens: 1024 } } })
   ctx.baseUrl = new URL('../../package.json', import.meta.url).href
   await ctx.plugin(Loader)

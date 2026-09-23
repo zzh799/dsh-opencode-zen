@@ -1,11 +1,14 @@
 /**
- * The OpenCode Zen adapter: one route, one catalog, per-request routing header.
+ * The OpenCode adapter for one gateway plan: one route, one catalog, and the
+ * per-request routing header. Which plan is a construction input, so the Zen
+ * pay-as-you-go endpoint and the Go subscription endpoint run this same code
+ * as two instances with no branching between them.
  *
  * Every request to the gateway carries two Harness-owned headers: the
  * attribution User-Agent (`deepseek-harness/<version>`), which pi-ai's client
  * lets request headers override, and `x-opencode-session`, which the gateway
  * requires and uses to route a conversation and share its prompt cache. The
- * header value is the request's session id — stable per conversation, so
+ * header value is the request's session id - stable per conversation, so
  * caching and billing attribution stay correct; a request arriving with no
  * session id gets a fresh random value rather than a shared constant, because
  * a constant would merge unrelated traffic into one cache bucket.
@@ -43,7 +46,8 @@ import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attac
 import { toPiContext, toStreamChunks } from './conversion/index.ts'
 import type { PiImageRequestContext } from './conversion/index.ts'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import { PROVIDER_ID, DISPLAY_NAME, OpencodeZenCatalog } from './catalog.ts'
+import { OpencodeZenCatalog } from './catalog.ts'
+import { ZEN_ROUTE, type RouteDescriptor } from './providers.ts'
 import { assertBaseURL, modelInPickerWhitelist } from './config.ts'
 import type { OpencodeZenConfig, OpencodeZenModelLimits } from './config.ts'
 
@@ -72,6 +76,11 @@ export interface OpencodeZenImageAccess {
 
 /** Constructor inputs for {@link OpencodeZenAdapter}. */
 export interface OpencodeZenAdapterOptions {
+  /**
+   * The plan this adapter instance serves. Absent means the Zen plan, which is
+   * what a direct construction without the plugin describes.
+   */
+  provider?: RouteDescriptor
   /**
    * The current configuration, re-read at every operation: a settings write
    * reaches the next request without a restart, and one operation never mixes
@@ -117,8 +126,12 @@ export class OpencodeZenAdapter extends LlmAdapter {
    */
   private catalogCache: { key: string; catalog: OpencodeZenCatalog } | undefined
 
+  /** The plan this instance serves; every provider-facing string comes from it. */
+  private readonly route: RouteDescriptor
+
   constructor(private readonly options: OpencodeZenAdapterOptions) {
     super()
+    this.route = options.provider ?? ZEN_ROUTE
   }
 
   /**
@@ -129,7 +142,10 @@ export class OpencodeZenAdapter extends LlmAdapter {
    * @returns the resolver caching catalog values, independent of deployment limits.
    */
   catalogOf(config: OpencodeZenConfig): OpencodeZenCatalog {
-    const key = `${config.baseURL}|${String(config.refreshMinutes)}`
+    // The route belongs in the key even though one instance serves one plan: a
+    // cache that outlived a rebinding would answer the Go endpoint with Zen's
+    // models, and the key is what makes that impossible rather than unlikely.
+    const key = `${this.route.id}|${config.baseURL}|${String(config.refreshMinutes)}`
     if (this.catalogCache?.key !== key) {
       this.catalogCache = {
         key,
@@ -140,6 +156,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
           this.options.onFallback ?? (() => {}),
           /* v8 ignore next -- the plugin always passes both observers; the defaults exist for direct construction */
           this.options.onOmitted ?? (() => {}),
+          this.route,
         ),
       }
     }
@@ -147,7 +164,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): { id: string; name: string } {
-    return { id: provider, name: DISPLAY_NAME }
+    return { id: provider, name: this.route.displayName }
   }
 
   override async listModels(_provider: string): Promise<readonly LlmModelInfo[]> {
@@ -162,7 +179,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
       .filter(model => modelInPickerWhitelist(config.enabledModels, model.id))
       .filter(model => config.showDeprecatedModels || !snapshot.details.get(model.id)?.deprecated)
       .map(model => ({
-        provider: PROVIDER_ID,
+        provider: this.route.id,
         id: model.id,
         name: model.name,
         inputModalities: [...model.input],
@@ -178,7 +195,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
     const snapshot = await this.catalogOf(config).forModel(model)
     const resolved = snapshot.models.get(model)
     if (resolved === undefined) {
-      throw new LlmError(`opencode-zen has no model "${model}"`, 'UNKNOWN_MODEL')
+      throw new LlmError(`${this.route.id} has no model "${model}"`, 'UNKNOWN_MODEL')
     }
     return this.modelInfo(withModelLimit(resolved, config.modelLimits))
   }
@@ -198,7 +215,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
       }
     }
     return {
-      provider: PROVIDER_ID,
+      provider: this.route.id,
       id: model.id,
       name: model.name,
       inputModalities: [...model.input],
@@ -216,7 +233,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
     const supported = getSupportedThinkingLevels(model)
     if (supported.some(level => level === effort)) return effort as ModelThinkingLevel
     throw new LlmError(
-      `opencode-zen model "${model.id}" does not support reasoning effort "${effort}"`,
+      `${this.route.id} model "${model.id}" does not support reasoning effort "${effort}"`,
       'UNSUPPORTED_REASONING_EFFORT',
     )
   }
@@ -229,14 +246,14 @@ export class OpencodeZenAdapter extends LlmAdapter {
     const snapshot = await this.catalogOf(config).forModel(options.model)
     const advertised = snapshot.models.get(options.model)
     if (advertised === undefined) {
-      throw new LlmError(`opencode-zen has no model "${options.model}"`, 'UNKNOWN_MODEL')
+      throw new LlmError(`${this.route.id} has no model "${options.model}"`, 'UNKNOWN_MODEL')
     }
     const model = withModelLimit(advertised, config.modelLimits)
     const outputLimit = config.modelLimits[model.id]?.maxTokens
     const maxTokens = outputLimit == null ? options.maxTokens : Math.min(options.maxTokens ?? outputLimit, outputLimit)
     const apiKey = await this.options.resolveApiKey()
     if (apiKey === undefined || apiKey.length === 0) {
-      throw new LlmError('llm-opencode-zen: no credential resolved for the route', 'MISSING_CREDENTIAL')
+      throw new LlmError(`llm-opencode-zen: no credential resolved for the ${this.route.id} route`, 'MISSING_CREDENTIAL')
     }
     const reasoning = this.resolveReasoningLevel(model, options.reasoningEffort)
 
@@ -254,7 +271,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
       // conversion failure as aborted, like every other conversion fault.
       const containsImage = options.messages.some(message => contentHasImage(message.content))
       if (containsImage && !model.input.includes('image')) {
-        throw new LlmError(`opencode-zen model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
+        throw new LlmError(`${this.route.id} model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
       }
       let imageRequest: PiImageRequestContext | undefined
       if (containsImage) {
@@ -303,7 +320,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
         while (true) {
           const result = await watchdog.next(iterator)
           if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-            throw new LlmError('opencode-zen stream idle timeout', 'TIMEOUT')
+            throw new LlmError(`${this.route.id} stream idle timeout`, 'TIMEOUT')
           }
           if (result.done) {
             exhausted = true
@@ -313,7 +330,7 @@ export class OpencodeZenAdapter extends LlmAdapter {
         }
       } finally {
         if (!exhausted) {
-          consumer.abort('opencode-zen stream consumer stopped')
+          consumer.abort(`${this.route.id} stream consumer stopped`)
           try {
             await iterator.return(undefined)
           } catch (_abortedSdkTeardown) {
@@ -323,10 +340,10 @@ export class OpencodeZenAdapter extends LlmAdapter {
       }
     } catch (error: unknown) {
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-        throw new LlmError('opencode-zen stream idle timeout', 'TIMEOUT', { cause: error })
+        throw new LlmError(`${this.route.id} stream idle timeout`, 'TIMEOUT', { cause: error })
       }
       if (options.signal?.aborted) {
-        throw new LlmError('opencode-zen request aborted by caller', 'ABORTED', { cause: error })
+        throw new LlmError(`${this.route.id} request aborted by caller`, 'ABORTED', { cause: error })
       }
       throw error
     }

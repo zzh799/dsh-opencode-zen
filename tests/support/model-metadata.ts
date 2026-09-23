@@ -38,3 +38,21 @@ export function metadataDocument(models?: Record<string, unknown>): Record<strin
     },
   }
 }
+
+/**
+ * A models.dev document carrying only the Go plan's record. `qwen3.8-max` is
+ * deliberate: it lives in pi-ai's `opencode-go` table and not in `opencode`,
+ * so a catalog reading the wrong record cannot accidentally resolve it.
+ */
+export function goMetadataDocument(models?: Record<string, unknown>): Record<string, unknown> {
+  return {
+    'opencode-go': {
+      npm: '@ai-sdk/openai-compatible',
+      models: models ?? {
+        'deepseek-v4-flash': modelMetadata({ name: 'DeepSeek V4 Flash', family: 'deepseek-flash', modalities: { input: ['text'] } }),
+        'qwen3.8-max': modelMetadata({ name: 'Qwen3.8 Max', provider: { npm: '@ai-sdk/anthropic' } }),
+        'kimi-k3': modelMetadata({ name: 'Kimi K3' }),
+      },
+    },
+  }
+}

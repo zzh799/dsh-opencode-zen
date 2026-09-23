@@ -59,7 +59,7 @@ function classifyPiAiError(message: string): string {
   if (/\b(?:network|connection|socket|fetch)\b|\bECONN[A-Z]+\b/i.test(message)
     || /\b(?:other side closed|HTTP2 request did not get a response|WebSocket closed unexpectedly)\b/i.test(message)
     // undici renders a mid-stream socket drop as a bare `terminated` (its
-    // `cause` — the real SocketError — was flattened away upstream); Node's
+    // `cause` - the real SocketError - was flattened away upstream); Node's
     // stream layer says `Premature close`.
     || /\bterminated\b|premature close/i.test(message)) {
     return 'TRANSPORT'
@@ -129,7 +129,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
 
 /**
  * Translate the pi-ai event stream into StreamChunks. pi-ai never throws
- * mid-stream — failures arrive as `error` events, which become error/aborted
+ * mid-stream - failures arrive as `error` events, which become error/aborted
  * `finish` chunks (the harness protocol's other error-delivery style).
  * @param events - one assistant turn's pi-ai event stream.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
