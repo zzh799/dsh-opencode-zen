@@ -44,7 +44,7 @@ import { toPiContext, toStreamChunks } from './conversion/index.ts'
 import type { PiImageRequestContext } from './conversion/index.ts'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { PROVIDER_ID, DISPLAY_NAME, OpencodeZenCatalog } from './catalog.ts'
-import { assertBaseURL } from './config.ts'
+import { assertBaseURL, modelInPickerWhitelist } from './config.ts'
 import type { OpencodeZenConfig, OpencodeZenModelLimits } from './config.ts'
 
 /** Apply one request's capacities without changing the shared catalog or its fallbacks. */
@@ -155,7 +155,11 @@ export class OpencodeZenAdapter extends LlmAdapter {
     const snapshot = await this.catalogOf(config).snapshot(true)
     // DSH resolves every listed model before showing the provider. Unconfigured
     // ids belong in settings discovery diagnostics, not this selectable list.
+    // The picker whitelist narrows this list and nothing else: resolving and
+    // streaming an unchecked id stays untouched, so a saved choice elsewhere
+    // never breaks.
     return [...snapshot.models.values()]
+      .filter(model => modelInPickerWhitelist(config.enabledModels, model.id))
       .filter(model => config.showDeprecatedModels || !snapshot.details.get(model.id)?.deprecated)
       .map(model => ({
         provider: PROVIDER_ID,

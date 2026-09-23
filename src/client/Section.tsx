@@ -125,10 +125,10 @@ function ModelsBody({ models, t }: {
  * @returns the section.
  */
 export function OpencodeZenSection(props: OpencodeZenSectionProps) {
-  const { useOpencodeZen, edit, resetField, save, discard, loadModels, setEnabled, setShowDeprecatedModels, t } = props
+  const { useOpencodeZen, edit, resetField, save, discard, loadModels, setModelChecked, clearModelChecks, t } = props
   if (useOpencodeZen === undefined || edit === undefined || resetField === undefined
     || save === undefined || discard === undefined || loadModels === undefined
-    || setEnabled === undefined || setShowDeprecatedModels === undefined || t === undefined) return null
+    || setModelChecked === undefined || clearModelChecks === undefined || t === undefined) return null
   return (
     <Loaded
       state={useOpencodeZen(snapshot => snapshot)}
@@ -138,8 +138,8 @@ export function OpencodeZenSection(props: OpencodeZenSectionProps) {
       save={save}
       discard={discard}
       loadModels={loadModels}
-      setEnabled={setEnabled}
-      setShowDeprecatedModels={setShowDeprecatedModels}
+      setModelChecked={setModelChecked}
+      clearModelChecks={clearModelChecks}
     />
   )
 }
@@ -153,8 +153,8 @@ function Loaded(props: {
   save: () => void
   discard: () => void
   loadModels: () => void
-  setEnabled: (next: boolean) => void
-  setShowDeprecatedModels: (next: boolean) => void
+  setModelChecked: (id: string, checked: boolean) => void
+  clearModelChecks: () => void
 }) {
   const { t, state, loadModels } = props
   const [advanced, setAdvanced] = useState(false)
@@ -280,7 +280,9 @@ function Loaded(props: {
             // The settings document being read-only is what locks the switch;
             // the credential's own writability is unrelated to this field.
             disabled={disabled}
-            onChange={props.setEnabled}
+            // Staged like every other field: the Save button below is what
+            // writes it, and what it writes is what the page shows.
+            onChange={(next) => { props.edit('enabled', String(next)) }}
           />
         </div>
         <p className={css.hint}>{state.enabled ? t('enabledHint') : t('enabledOff')}</p>
@@ -334,12 +336,14 @@ function Loaded(props: {
         <div className={css.head}>
           <span className={css.label}>{t('showDeprecatedLabel')}</span>
           <Switch checked={state.showDeprecatedModels} label={t('showDeprecatedLabel')}
-            disabled={disabled || state.pickerSaving} onChange={props.setShowDeprecatedModels} />
+            disabled={disabled} onChange={(next) => { props.edit('showDeprecatedModels', String(next)) }} />
         </div>
         <p className={css.hint}>{t('showDeprecatedHint')}</p>
-        {state.pickerFailed ? <p className={css.failedNote} role="alert">{t('pickerFailed')}</p> : null}
-        <ModelEditor models={state.models} draft={state.modelLimitDraft} t={t} disabled={disabled || state.saving}
-          onEdit={next => { props.edit('modelLimits', JSON.stringify(next)) }} />
+        <ModelEditor models={state.models} draft={state.modelLimitDraft}
+          checked={state.checkedModels} checkedCount={state.checkedCount}
+          t={t} disabled={disabled || state.saving}
+          onEdit={next => { props.edit('modelLimits', JSON.stringify(next)) }}
+          onToggleCheck={props.setModelChecked} onClearChecks={props.clearModelChecks} />
       </div>
       {disabled ? <p className={css.hint}>{t('readOnly')}</p> : null}
       </div>

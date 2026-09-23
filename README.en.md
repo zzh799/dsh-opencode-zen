@@ -11,6 +11,7 @@ The plugin automatically adds the session headers required by OpenCode Zen and r
 - **Session headers**: Every request includes the Harness User-Agent and `x-opencode-session`. A session keeps the same ID to maximize cache hits.
 - **Streaming and history**: Supports streaming output, tool calls, and history replay through pi-ai.
 - **Image input**: Supports models that advertise image capability in the catalog.
+- **Model management**: Check the models conversation pickers should offer; an unchecked model leaves the picker, while a conversation already using it keeps running and the change shows the next time a picker opens.
 - **Model capacity overrides**: Override the context window and maximum output per model, with blank values inheriting the online catalog.
 - **Prompt and caching**: The plugin does not add hidden system prompts; the session ID is used for gateway routing.
 
@@ -98,6 +99,8 @@ Only one adapter in a profile can provide the `opencode-zen` route. If another p
 Confirm that the plugin is enabled and an API key is configured, then refresh the model list in Settings. Each model-list read requests the gateway's `/models` endpoint and synchronizes the OpenCode Zen configuration from [models.dev](https://models.dev/api.json). Protocol support, context length, output limit, and image capability come from the online configuration, so new models do not require a release of this plugin or pi-ai.
 
 Models that are present in the gateway and have an entry using Anthropic Messages, OpenAI Chat Completions, or OpenAI Responses become available on the next list read or refresh. Refresh bypasses the existing catalog cache; a direct request for a previously unseen model also triggers an immediate resynchronization. The Settings page shows the complete discovery result.
+
+A model that is not checked in the Settings page's model management also stays out of conversation pickers; check it and save. Unchecking does not interrupt a conversation already running that model, and the change shows the next time a picker opens.
 
 A gateway model ID with no usable protocol or capability configuration is shown in Settings with a configuration-unavailable diagnostic and is kept out of the conversation picker, so one unconfigured model cannot block the rest of the list. Direct requests report the reason. Refresh after the upstream configuration is corrected. A model ID alone is not enough to reliably infer its transport; new protocols or protocol-specific exceptions may still require adapter changes.
 

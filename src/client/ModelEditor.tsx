@@ -10,13 +10,19 @@ export function hasCapacityOverride(limit: OpencodeZenModelLimit | null | undefi
   return limit?.contextWindow != null || limit?.maxTokens != null
 }
 
-/** One gateway-backed list and its selected model's staged capacity settings. */
-export function ModelEditor({ models, draft, t, disabled, onEdit }: {
+/** One gateway-backed list, serving both picker membership and staged capacities. */
+export function ModelEditor({ models, draft, checked, checkedCount, t, disabled, onEdit, onToggleCheck, onClearChecks }: {
   models: OpencodeZenModels
   draft: OpencodeZenModelLimits
+  /** Ids the conversation pickers currently offer; every listed model while the whitelist was never set. */
+  checked: readonly string[]
+  /** How many of the listed models those are, for the batch action's state. */
+  checkedCount: number
   t: Translate
   disabled: boolean
   onEdit: (next: OpencodeZenModelLimits) => void
+  onToggleCheck: (id: string, checked: boolean) => void
+  onClearChecks: () => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
@@ -28,6 +34,7 @@ export function ModelEditor({ models, draft, t, disabled, onEdit }: {
   }, [])
   // Saved overrides never establish membership: only a successful gateway listing does.
   const all = sortModels(models.status === 'ready' ? models.entries : [], now)
+  const shown = new Set(checked)
   const normalized = query.trim().toLocaleLowerCase()
   const entries = all.filter(model => `${model.name ?? ''} ${model.id}`.toLocaleLowerCase().includes(normalized)
     && (filter === 'all' || filter === 'new' && isNewModel(model, now)
@@ -50,22 +57,34 @@ export function ModelEditor({ models, draft, t, disabled, onEdit }: {
   </>
   return (
     <div className={css.limitsEditor}>
+      <p className={css.sectionTitle}>{t('limitsLabel')}</p>
+      <p className={css.hint}>{t('modelPickHint')}</p>
       <label className={css.visuallyHidden} htmlFor="opencode-zen-model-filter">{t('limitsFilterLabel')}</label>
       <input id="opencode-zen-model-filter" className={css.input} type="search" autoComplete="off"
         placeholder={t('limitsFilterPlaceholder')} value={query} onChange={event => { setQuery(event.target.value) }} />
       <div className={css.filters} role="group" aria-label={t('filterLabel')}>
         {filters.map(([key, label, count]) => <button key={key} type="button" className={css.filter}
           aria-pressed={filter === key} onClick={() => { setFilter(key) }}>{t(label)} <span>{count}</span></button>)}
+        <button type="button" className={`${css.filter} ${css.clearChecks}`}
+          disabled={disabled || checkedCount === 0} onClick={onClearChecks}>{t('clearChecked')}</button>
       </div>
       {model ? (
         <div className={css.modelLayout}>
           <nav className={css.modelList} aria-label={t('modelsLabel')}>
-            {entries.map(entry => <button key={entry.id} type="button" className={css.modelChoice}
-              aria-pressed={entry.id === model.id} onClick={() => { setSelected(entry.id) }}>
-              <span className={css.modelName}>{entry.name ?? entry.id} {badges(entry)}</span>
-              <code className={css.limitsModelId} translate="no">{entry.id}</code>
-              {isNewModel(entry, now) ? <span className={css.releaseDate}>{t('releasedOn', { date: entry.releaseDate })}</span> : null}
-            </button>)}
+            {entries.map(entry => <div key={entry.id} className={css.modelRow}>
+              <label className={css.modelCheck}>
+                <input type="checkbox" className={css.checkbox}
+                  checked={shown.has(entry.id)} disabled={disabled}
+                  aria-label={t('modelVisibleLabel', { name: entry.name ?? entry.id })}
+                  onChange={event => { onToggleCheck(entry.id, event.target.checked) }} />
+              </label>
+              <button type="button" className={css.modelChoice}
+                aria-pressed={entry.id === model.id} onClick={() => { setSelected(entry.id) }}>
+                <span className={css.modelName}>{entry.name ?? entry.id} {badges(entry)}</span>
+                <code className={css.limitsModelId} translate="no">{entry.id}</code>
+                {isNewModel(entry, now) ? <span className={css.releaseDate}>{t('releasedOn', { date: entry.releaseDate })}</span> : null}
+              </button>
+            </div>)}
           </nav>
           <section className={css.modelDetails} aria-label={t('modelDetails')}>
             <div className={css.modelHeading}>
@@ -84,6 +103,9 @@ export function ModelEditor({ models, draft, t, disabled, onEdit }: {
         </div>
       ) : models.status === 'ready' && all.length > 0 ? <p className={css.hint}>{t('limitsNoMatches', { query })}</p> : null}
       <div className={css.head}>
+        {models.status === 'ready'
+          ? <span className={css.limitsSummary}>{t('limitsCheckedSummary', { count: checkedCount, total: all.length })}</span>
+          : null}
         <span className={css.limitsSummary}>{t('limitsSummary', { count: customized })}</span>
         {Object.values(draft).some(hasCapacityOverride) ? <button type="button" className={css.reset} disabled={disabled}
           onClick={() => { onEdit(Object.fromEntries(Object.keys(draft).map(id => [id, null]))) }}>{t('limitsResetAll')}</button> : null}

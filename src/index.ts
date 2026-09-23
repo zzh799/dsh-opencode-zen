@@ -19,6 +19,7 @@
  *     apiKeyEnv: OPENCODE_API_KEY       # default
  *     baseURL: https://opencode.ai/zen/v1   # default
  *     refreshMinutes: 60                # live catalog re-resolution interval
+ *     enabledModels: []                 # absent = every model; empty = the route withdraws
  * ```
  *
  * The credential resolves per request through the credentials seam, falling
@@ -44,7 +45,7 @@ import {
   PROVIDER_ID,
   discoverCatalogModels,
 } from './catalog.ts'
-import { Config, PlainConfig, readConfig, assertBaseURL } from './config.ts'
+import { Config, PlainConfig, readConfig, assertBaseURL, withdrawsFromPickers } from './config.ts'
 import type { LiveConfig, OpencodeZenConfig } from './config.ts'
 import { ZenModelsService } from './models.ts'
 import { registerZenRemotes } from './remotes.ts'
@@ -73,6 +74,17 @@ export const inject = ['llm']
 
 /** Settings namespace this plugin installs and the Web page edits. */
 export const NS = 'llm-opencode-zen'
+
+/**
+ * Identity of one configuration's picker whitelist, for change detection: the
+ * settings layer hands out a fresh array on every read, so what a change is
+ * compared on is the members, not the reference.
+ * @param config - the configuration in force.
+ * @returns a stable string standing for the whitelist, absence included.
+ */
+function whitelistKey(config: OpencodeZenConfig): string {
+  return JSON.stringify(config.enabledModels ?? null)
+}
 
 /**
  * Register the route, its discovery, the settings section, and their
@@ -130,21 +142,28 @@ export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void 
   })
   ctx.plugin(ZenModelsService, { catalog: () => adapter.catalogOf(current()) })
   let pickerVisibility = current().showDeprecatedModels
+  let pickerWhitelist = whitelistKey(current())
   let registration: AdapterRegistrationHandle | undefined
   /**
-   * Register the route while the switch is on and its credential resolves, and
-   * drop it when either says no. A route with no key would otherwise sit in
-   * every model picker and read as a usable provider to first-run onboarding —
-   * the dormancy llm-pi-ai keeps by resolving zero routes until configured.
-   * Without the credentials seam the environment answers synchronously, so
-   * registration is too.
+   * Whether the configuration leaves the pickers anything to offer. An empty
+   * whitelist is a deliberate "no model picked": like the switch itself, that
+   * withdraws the provider rather than parking an empty shell in every picker.
+   */
+  const servesPickers = (): boolean => current().enabled && !withdrawsFromPickers(current().enabledModels)
+  /**
+   * Register the route while the switch is on, the whitelist still lists a
+   * model, and its credential resolves, and drop it when any of them says no. A
+   * route with no key would otherwise sit in every model picker and read as a
+   * usable provider to first-run onboarding, the dormancy llm-pi-ai keeps by
+   * resolving zero routes until configured. Without the credentials seam the
+   * environment answers synchronously, so registration is too.
    *
    * Nothing else is torn down with the route: model discovery, the settings
    * section, and the credentials listener all stay mounted, so the page that
    * owns the switch stays reachable to turn it back on.
    */
   const applyRoute = (configured: boolean): void => {
-    if (configured && current().enabled && registration === undefined) {
+    if (configured && servesPickers() && registration === undefined) {
       try {
         registration = ctx.llm.registerAdapter([PROVIDER_ID], adapter)
       } catch (error: unknown) {
@@ -154,17 +173,22 @@ export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void 
         // mount keeps working.
         ctx.logger.error(`llm-opencode-zen: not registering the "${PROVIDER_ID}" route (${String(error)})`)
       }
-    } else if ((!configured || !current().enabled) && registration !== undefined) {
+    } else if ((!configured || !servesPickers()) && registration !== undefined) {
       registration()
       registration = undefined
       if (!current().enabled) {
         ctx.logger.info('llm-opencode-zen: disabled by configuration; the route and its models are withdrawn')
+      } else if (withdrawsFromPickers(current().enabledModels)) {
+        ctx.logger.info('llm-opencode-zen: no model is selected for the pickers; the route and its models are withdrawn')
       }
     }
   }
   const syncRoute = (): void => {
-    if (pickerVisibility !== current().showDeprecatedModels) {
-      pickerVisibility = current().showDeprecatedModels
+    const visibility = current().showDeprecatedModels
+    const whitelist = whitelistKey(current())
+    if (pickerVisibility !== visibility || pickerWhitelist !== whitelist) {
+      pickerVisibility = visibility
+      pickerWhitelist = whitelist
       // Replacing the owned route notifies every session picker without a restart.
       registration?.replace([PROVIDER_ID])
     }

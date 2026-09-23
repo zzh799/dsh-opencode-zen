@@ -54,6 +54,21 @@ export interface OpencodeZenConfig {
   enabled: boolean
   /** Include models marked deprecated by models.dev in conversation pickers. */
   showDeprecatedModels: boolean
+  /**
+   * Picker whitelist: the model ids conversation pickers may offer. Absent means
+   * the field was never set, which admits every model the gateway serves: the
+   * read of a document written before this field existed. An empty array is a
+   * deliberate "none" and withdraws the provider from the pickers rather than
+   * leaving an empty shell in them.
+   *
+   * The whitelist filters the picker's list only. A model id named anywhere
+   * else (a headless patch, an agent default, a running conversation) is served
+   * exactly as before, and an unchecked model never becomes an error.
+   *
+   * `null` is the schema's other spelling of an absent field and reads the same
+   * way, so a hand-edited document cannot accidentally mean "no model".
+   */
+  enabledModels?: string[] | null
   /** Credential reference: the environment variable the key resolves from. */
   apiKeyEnv: string
   /** The gateway endpoint; also the base of the live model listing. */
@@ -76,6 +91,12 @@ export interface OpencodeZenConfig {
 const fields = {
   enabled: z.boolean().default(true),
   showDeprecatedModels: z.boolean().default(false),
+  // Deliberately nullable rather than defaulted: a plain `z.array()` resolves an
+  // absent field to `[]`, which would erase the difference between a document
+  // that predates the whitelist (every model visible) and a stored empty list
+  // (a deliberate "none") on the first upgrade. `z.const(null)` is the same
+  // spelling the per-model overrides already use for an explicit reset.
+  enabledModels: z.union([z.const(null), z.array(z.string())]),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string().default(DEFAULT_BASE_URL),
   refreshMinutes: z.number().step(1).min(1).max(7 * 24 * 60).default(DEFAULT_REFRESH_MINUTES),
@@ -104,6 +125,29 @@ export const Config = z.object(Object.fromEntries(
 /** Keep the Loader's references: reparsing them would detach live updates. */
 export function readConfig(config: LiveConfig): OpencodeZenConfig {
   return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, value.get()])) as unknown as OpencodeZenConfig
+}
+
+/**
+ * Whether one model id may appear in a conversation picker. An absent
+ * whitelist admits every id: the field was never set, which is what an
+ * upgraded document looks like.
+ * @param whitelist - the configured picker whitelist; null and undefined both mean "never set".
+ * @param id - the gateway model id to test.
+ * @returns whether the picker may list the model.
+ */
+export function modelInPickerWhitelist(whitelist: readonly string[] | null | undefined, id: string): boolean {
+  return whitelist == null || whitelist.includes(id)
+}
+
+/**
+ * Whether the whitelist withdraws the provider from the pickers entirely. A
+ * deliberate empty list is "no model picked", and a provider with nothing to
+ * offer must leave the picker rather than sit in it as an empty shell.
+ * @param whitelist - the configured picker whitelist; null and undefined both mean "never set".
+ * @returns whether every picker should drop the provider.
+ */
+export function withdrawsFromPickers(whitelist: readonly string[] | null | undefined): boolean {
+  return whitelist != null && whitelist.length === 0
 }
 
 /**

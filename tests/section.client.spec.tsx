@@ -30,7 +30,7 @@ function field(text: string, rest: Partial<OpencodeZenSectionState['baseURL']> =
 
 type SectionField = 'baseURL' | 'apiKeyEnv' | 'refreshMinutes' | 'streamIdleTimeoutMs'
   | 'maxRequestImageBytes' | 'requestImagePixelBudget' | 'requestImageMaxBytes' | 'apiKey' | 'models'
-  | 'modelLimits' | 'modelLimitDraft'
+  | 'modelLimits' | 'modelLimitDraft' | 'checkedModels'
 
 const settled: Omit<OpencodeZenSectionState, SectionField> = {
   available: true,
@@ -41,8 +41,7 @@ const settled: Omit<OpencodeZenSectionState, SectionField> = {
   failed: false,
   enabled: true,
   showDeprecatedModels: false,
-  pickerSaving: false,
-  pickerFailed: false,
+  checkedCount: 0,
   apiKeyConfigured: false,
   apiKeyWritable: true,
 }
@@ -72,6 +71,7 @@ function stateOf(overrides: Partial<OpencodeZenSectionState> = {}): OpencodeZenS
     modelLimits: field(''),
     modelLimitDraft: {},
     models: { status: 'idle' },
+    checkedModels: [],
     ...overrides,
   }
 }
@@ -83,8 +83,8 @@ function actions() {
     save: vi.fn(),
     discard: vi.fn(),
     loadModels: vi.fn(),
-    setEnabled: vi.fn(),
-    setShowDeprecatedModels: vi.fn(),
+    setModelChecked: vi.fn(),
+    clearModelChecks: vi.fn(),
   }
 }
 
@@ -136,7 +136,7 @@ describe('OpencodeZenSection', () => {
     expect(held.loadModels).not.toHaveBeenCalled()
   })
 
-  it('reflects the switch state and writes the flip straight through', () => {
+  it('reflects the switch state and stages the flip for the next save', () => {
     const reading = actions()
     renderSection(stateOf({ enabled: true }), reading)
 
@@ -144,10 +144,10 @@ describe('OpencodeZenSection', () => {
     expect(control.getAttribute('aria-checked')).toBe('true')
     expect(screen.getByText(en.enabledHint)).toBeTruthy()
 
-    // The toggle writes on the click: no save gesture stands between the user
-    // and the route leaving the pickers.
+    // The switch is staged with everything else on the page: one save writes
+    // the whole form, so nothing reaches the Host on the click itself.
     fireEvent.click(control)
-    expect(reading.setEnabled).toHaveBeenCalledWith(false)
+    expect(reading.edit).toHaveBeenCalledWith('enabled', 'false')
     expect(reading.save).not.toHaveBeenCalled()
   })
 
@@ -180,7 +180,7 @@ describe('OpencodeZenSection', () => {
     expect(screen.getByRole('button', { name: /Kimi K2/ })).toBeTruthy()
   })
 
-  it('keeps deprecated gateway models configurable and changes picker visibility immediately', () => {
+  it('keeps deprecated gateway models configurable and stages the visibility flip', () => {
     const acts = actions()
     renderSection(stateOf({ models: listing([{ id: 'old', name: 'Old model', deprecated: true }]),
       modelLimitDraft: { absent: { maxTokens: 10 } },
@@ -190,7 +190,8 @@ describe('OpencodeZenSection', () => {
     const toggle = screen.getByRole('switch', { name: en.showDeprecatedLabel })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(toggle)
-    expect(acts.setShowDeprecatedModels).toHaveBeenCalledWith(true)
+    expect(acts.edit).toHaveBeenCalledWith('showDeprecatedModels', 'true')
+    // A deprecated model is still configurable while it is out of the pickers.
     expect(acts.save).not.toHaveBeenCalled()
   })
 
@@ -212,6 +213,56 @@ describe('OpencodeZenSection', () => {
     expect(screen.getByRole('navigation', { name: en.modelsLabel })).toBeTruthy()
     expect(screen.getByLabelText(t('limitsContextLabel', { name: 'Model' }))).toBeTruthy()
     expect(screen.queryByRole('button', { name: en.limitsLabel })).toBeNull()
+    // The section title names both jobs the list does now.
+    expect(screen.getByText(en.limitsLabel)).toBeTruthy()
+  })
+
+  it('renders a checkbox per listed model and stages the toggle without disturbing the row button', () => {
+    const acts = actions()
+    renderSection(stateOf({ models: listing([{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]),
+      checkedModels: ['a', 'b'], checkedCount: 2,
+    }), acts)
+
+    const alpha = screen.getByRole('checkbox', { name: t('modelVisibleLabel', { name: 'Alpha' }) }) as HTMLInputElement
+    expect(alpha.checked).toBe(true)
+    fireEvent.click(alpha)
+    expect(acts.setModelChecked).toHaveBeenCalledWith('a', false)
+    // Picking a model is a separate control from picking the row.
+    expect(acts.edit).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Beta/ }))
+    expect(acts.setModelChecked).toHaveBeenCalledTimes(1)
+    expect(acts.edit).not.toHaveBeenCalled()
+  })
+
+  it('renders models outside the whitelist unchecked and reports how many the pickers offer', () => {
+    renderSection(stateOf({ models: listing([{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }]),
+      checkedModels: ['a'], checkedCount: 1,
+    }))
+
+    expect((screen.getByRole('checkbox', { name: t('modelVisibleLabel', { name: 'Beta' }) }) as HTMLInputElement).checked)
+      .toBe(false)
+    expect(screen.getByText(t('limitsCheckedSummary', { count: 1, total: 2 }))).toBeTruthy()
+  })
+
+  it('clears every check from the batch action, which is inert when nothing is checked', () => {
+    const acts = actions()
+    renderSection(stateOf({ models: listing([{ id: 'a', name: 'Alpha' }]), checkedModels: ['a'], checkedCount: 1 }), acts)
+    fireEvent.click(screen.getByRole('button', { name: en.clearChecked }))
+    expect(acts.clearModelChecks).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    renderSection(stateOf({ models: listing([{ id: 'a', name: 'Alpha' }]), checkedModels: [], checkedCount: 0 }))
+    expect(screen.getByRole('button', { name: en.clearChecked }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('locks the checkboxes and the batch action with the read-only document', () => {
+    renderSection(stateOf({ writable: false, models: listing([{ id: 'a', name: 'Alpha' }]),
+      checkedModels: ['a'], checkedCount: 1,
+    }))
+    expect(screen.getByRole('checkbox', { name: t('modelVisibleLabel', { name: 'Alpha' }) })
+      .hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: en.clearChecked }).hasAttribute('disabled')).toBe(true)
   })
 
   it('makes model capacities searchable and stages numeric edits', () => {
@@ -446,31 +497,181 @@ describe('OpencodeZenSection', () => {
 })
 
 describe('OpencodeZenSectionController through the component', () => {
-  it('persists picker visibility without saving unrelated drafts and reports refused writes', async () => {
+  /** A host that accepts every write, publishing as the real scope would. */
+  function acceptingHost(host: ReturnType<typeof stubSettingsScope<OpencodeZenSettings>>): void {
+    host.set.mockImplementation((field: string, value: unknown) => {
+      const section = { ...host.scope.getSnapshot().value as object }
+      const user = { ...host.scope.getSnapshot().user as object }
+      host.publish({ value: { ...section, [field]: value }, user: { ...user, [field]: value } })
+    })
+  }
+
+  function mount(controller: OpencodeZenSectionController) {
+    const face = controller.inject()
+    return render(<OpencodeZenSection {...face} t={t}
+      useOpencodeZen={bindSnapshotSelector(face.hooks.opencodeZen)} />)
+  }
+
+  const alpha = (): HTMLInputElement =>
+    screen.getByRole('checkbox', { name: t('modelVisibleLabel', { name: 'Alpha' }) }) as HTMLInputElement
+  const beta = (): HTMLInputElement =>
+    screen.getByRole('checkbox', { name: t('modelVisibleLabel', { name: 'Beta' }) }) as HTMLInputElement
+
+  function modelHost(): ReturnType<typeof stubSettingsScope<OpencodeZenSettings>> {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    acceptingHost(host)
+    return host
+  }
+
+  function controllerFor(host: ReturnType<typeof stubSettingsScope<OpencodeZenSettings>>) {
+    return new OpencodeZenSectionController(host.scope, { remote: {
+      credentials: { describe: async () => ({ ok: true, value: {} }) },
+      llm: {
+        discoverModels: async () => ({
+          ok: true,
+          value: [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }],
+        }),
+      },
+    } } as never)
+  }
+
+  it('stages the switches with the rest of the form, writing only on save', async () => {
     const host = stubSettingsScope<OpencodeZenSettings>()
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
-    host.set.mockImplementation((field: string, value: unknown) => {
-      host.publish({ value: { ...host.scope.getSnapshot().value, [field]: value } })
-    })
+    acceptingHost(host)
     const controller = new OpencodeZenSectionController(host.scope, { remote: {
-      credentials: { describe: async () => ({ ok: true, value: {} }) },
+      credentials: {
+        describe: async () => ({ ok: true, value: { OPENCODE_API_KEY: { configured: true, writable: true } } }),
+        set: async () => ({ ok: true, value: undefined }),
+      },
       llm: { discoverModels: async () => ({ ok: true, value: [] }) },
     } } as never)
-    render(<OpencodeZenSection {...controller.inject()} t={t}
-      useOpencodeZen={bindSnapshotSelector(controller.inject().hooks.opencodeZen)} />)
+    mount(controller)
     try {
       await act(async () => { await Promise.resolve() })
       fireEvent.change(screen.getByLabelText(en.keyLabel), { target: { value: 'unsaved-key' } })
       const toggle = () => screen.getByRole('switch', { name: en.showDeprecatedLabel })
-      await act(async () => { fireEvent.click(toggle()) })
+      fireEvent.click(toggle())
+      // Staged: the page shows the asked-for state and the Host is untouched.
+      expect(toggle().getAttribute('aria-checked')).toBe('true')
+      expect(host.set).not.toHaveBeenCalled()
+      expect(screen.getByLabelText(en.keyLabel)).toHaveProperty('value', 'unsaved-key')
+
+      await act(async () => { screen.getByText(en.save).click() })
       expect(host.set).toHaveBeenCalledWith('showDeprecatedModels', true)
       expect(toggle().getAttribute('aria-checked')).toBe('true')
-      expect(screen.getByLabelText(en.keyLabel)).toHaveProperty('value', 'unsaved-key')
-      host.set.mockRejectedValueOnce(new Error('write refused'))
-      await act(async () => { fireEvent.click(toggle()) })
-      expect(toggle().getAttribute('aria-checked')).toBe('true')
-      expect(screen.getByRole('alert').textContent).toBe(en.pickerFailed)
+      // The Save button carries the feedback the switch used to: a write the
+      // Host did not land keeps its draft and reports itself in the shared note.
+      host.set.mockImplementationOnce(() => Promise.resolve())
+      fireEvent.click(toggle())
+      await act(async () => { screen.getByText(en.save).click() })
+      expect(screen.getByText(en.savedFailed)).toBeTruthy()
+      expect(toggle().getAttribute('aria-checked')).toBe('false')
     } finally { controller.dispose() }
+  })
+
+  it('materializes the whitelist on the first check and saves it with the switches', async () => {
+    const host = modelHost()
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const controller = controllerFor(host)
+    mount(controller)
+    try {
+      await act(async () => { await Promise.resolve() })
+      // No whitelist stored yet, so every listed model reads as checked.
+      expect(alpha().checked).toBe(true)
+      expect(beta().checked).toBe(true)
+      expect(screen.getByText(t('limitsCheckedSummary', { count: 2, total: 2 }))).toBeTruthy()
+
+      fireEvent.click(beta())
+      expect(beta().checked).toBe(false)
+      expect(host.set).not.toHaveBeenCalled()
+      expect(screen.getByText(t('limitsCheckedSummary', { count: 1, total: 2 }))).toBeTruthy()
+
+      await act(async () => { screen.getByText(en.save).click() })
+      // The materialized list is the whole listing minus the unchecked model.
+      expect(host.scope.getSnapshot().value?.enabledModels).toEqual(['a'])
+      expect(screen.getByText<HTMLButtonElement>(en.save).disabled).toBe(true)
+    } finally { controller.dispose() }
+  })
+
+  it('keeps an id the listing no longer serves, and clears every check on the batch action', async () => {
+    const host = modelHost()
+    host.publish({ status: 'ready', writable: true, value: { enabledModels: ['retired', 'a'] }, user: {} })
+    const controller = controllerFor(host)
+    mount(controller)
+    try {
+      await act(async () => { await Promise.resolve() })
+      expect(alpha().checked).toBe(true)
+      expect(beta().checked).toBe(false)
+
+      // Checking a model the stored list never named does not clean up the
+      // stale id beside it: a retired model comes back checked if it returns.
+      fireEvent.click(beta())
+      await act(async () => { screen.getByText(en.save).click() })
+      expect(host.scope.getSnapshot().value?.enabledModels).toEqual(['retired', 'a', 'b'])
+
+      fireEvent.click(screen.getByRole('button', { name: en.clearChecked }))
+      expect(screen.getByText(t('limitsCheckedSummary', { count: 0, total: 2 }))).toBeTruthy()
+      await act(async () => { screen.getByText(en.save).click() })
+      // An empty whitelist is stored as such; withdrawing the provider from the
+      // pickers is the Host's read of it.
+      expect(host.scope.getSnapshot().value?.enabledModels).toEqual([])
+    } finally { controller.dispose() }
+  })
+
+  it('restores the whitelist and the switches on discard', async () => {
+    const host = modelHost()
+    host.publish({ status: 'ready', writable: true, value: { enabledModels: ['a'] }, user: {} })
+    const controller = controllerFor(host)
+    mount(controller)
+    try {
+      await act(async () => { await Promise.resolve() })
+      fireEvent.click(beta())
+      fireEvent.click(screen.getByRole('switch', { name: en.enabledLabel }))
+      expect(screen.getByText<HTMLButtonElement>(en.save).disabled).toBe(false)
+
+      fireEvent.click(screen.getByText(en.discard))
+      // One gesture, no confirmation, back to what the Host holds.
+      expect(alpha().checked).toBe(true)
+      expect(beta().checked).toBe(false)
+      expect(screen.getByRole('switch', { name: en.enabledLabel }).getAttribute('aria-checked')).toBe('true')
+      expect(screen.getByText<HTMLButtonElement>(en.save).disabled).toBe(true)
+      expect(host.set).not.toHaveBeenCalled()
+    } finally { controller.dispose() }
+  })
+
+  it('arms the unsaved-changes prompt only while a save would write something', async () => {
+    const added = vi.spyOn(window, 'addEventListener')
+    const removed = vi.spyOn(window, 'removeEventListener')
+    const host = modelHost()
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
+    const controller = controllerFor(host)
+    mount(controller)
+    const unloadAdds = (): number => added.mock.calls.filter(([type]) => type === 'beforeunload').length
+    const unloadRemoves = (): number => removed.mock.calls.filter(([type]) => type === 'beforeunload').length
+    try {
+      await act(async () => { await Promise.resolve() })
+      expect(unloadAdds()).toBe(0)
+
+      fireEvent.click(beta())
+      expect(unloadAdds()).toBe(1)
+      const guard = added.mock.calls.find(([type]) => type === 'beforeunload')?.[1] as (event: Event) => void
+      const event = new Event('beforeunload', { cancelable: true })
+      guard(event)
+      expect(event.defaultPrevented).toBe(true)
+
+      fireEvent.click(screen.getByText(en.discard))
+      expect(unloadRemoves()).toBe(1)
+
+      fireEvent.click(beta())
+      await act(async () => { screen.getByText(en.save).click() })
+      expect(unloadRemoves()).toBe(2)
+      expect(unloadAdds()).toBe(2)
+    } finally {
+      controller.dispose()
+      added.mockRestore()
+      removed.mockRestore()
+    }
   })
 
   it('saves, discards, and resets capacities while preserving explicit catalog choices', async () => {

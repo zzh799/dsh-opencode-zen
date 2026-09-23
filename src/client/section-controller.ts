@@ -50,6 +50,12 @@ export interface OpencodeZenSettings {
   enabled?: boolean
   /** Include gateway-served deprecated models in conversation pickers. */
   showDeprecatedModels?: boolean
+  /**
+   * Picker whitelist: the model ids conversation pickers may offer. Absent (or
+   * null) means the field was never set and every model stays visible; an empty
+   * array is a deliberate "none" that withdraws the provider from the pickers.
+   */
+  enabledModels?: string[] | null
   /** Credential reference naming the environment key. */
   apiKeyEnv?: string
   /** The gateway endpoint; also the live listing base. */
@@ -108,14 +114,20 @@ export type OpencodeZenModels =
 /** What the settings page renders. */
 export interface OpencodeZenSectionState extends FormShell {
   /**
-   * Whether the adapter currently serves its route. Resolved from the section
-   * rather than staged: the switch writes on the click that flips it, because
-   * a withdrawn route is what the user is trying to observe.
+   * Whether the adapter will serve its route once the staged form is saved.
+   * Resolved from the draft over the section rather than written on the click:
+   * every control on this page, the switches included, is one save.
    */
   enabled: boolean
   showDeprecatedModels: boolean
-  pickerSaving: boolean
-  pickerFailed: boolean
+  /**
+   * The picker whitelist as the page shows it. While the field was never set
+   * this is every listed model: the unset state is "all visible", not "none",
+   * so each row can render its checkbox from membership alone.
+   */
+  checkedModels: readonly string[]
+  /** How many of the listed models the pickers would currently offer. */
+  checkedCount: number
   /** Credential reference naming the environment key. */
   apiKeyEnv: FieldState
   /** The gateway endpoint. */
@@ -153,11 +165,17 @@ export interface OpencodeZenSectionFace extends FormActions {
   /** Read the gateway's model listing, now or again after a failure. */
   loadModels: () => void
   /**
-   * Turn the adapter's route on or off, writing immediately.
-   * @param next - the state the switch asks for.
+   * Stage one model's membership in the picker whitelist. Saved with the rest
+   * of the form; the pickers follow on the next open.
+   * @param id - the gateway model id the checkbox names.
+   * @param checked - the state the checkbox asks for.
    */
-  setEnabled: (next: boolean) => void
-  setShowDeprecatedModels: (next: boolean) => void
+  setModelChecked: (id: string, checked: boolean) => void
+  /**
+   * Stage an empty whitelist, which withdraws the provider from the pickers
+   * rather than leaving an empty one there. Saved with the rest of the form.
+   */
+  clearModelChecks: () => void
 }
 
 /** Bridges the `llm-opencode-zen` scope and the credentials domain onto the page. */
@@ -167,10 +185,11 @@ export class OpencodeZenSectionController {
   private credential: CredentialState = { ref: '', configured: false, writable: true }
   private models: OpencodeZenModels = { status: 'idle' }
   private modelsRequest = 0
-  private pickerSaving = false
-  private pickerFailed = false
   private face: OpencodeZenSectionFace | undefined
   private readonly unsubscribe: () => void
+  private readonly unsubscribeForm: () => void
+  /** The live form listener behind the unsaved-changes prompt; absent while clean. */
+  private unloadGuard: ((event: BeforeUnloadEvent) => void) | undefined
 
   /**
    * @param scope - the bound settings scope for the `llm-opencode-zen` namespace.
@@ -186,9 +205,10 @@ export class OpencodeZenSectionController {
     this.form = new StagedForm(
       scope as SettingsScope<Record<string, unknown>>,
       [
-        // Present so the shared override/reset machinery tracks the field; the
-        // page's switch writes it directly instead of staging it.
+        // The switches are staged like every other field: they are part of the
+        // same save, so the page has no control that reaches the Host on a click.
         booleanField('enabled'),
+        booleanField('showDeprecatedModels'),
         textField('apiKeyEnv'),
         textField('baseURL'),
         numberField('refreshMinutes'),
@@ -197,11 +217,13 @@ export class OpencodeZenSectionController {
         numberField('requestImagePixelBudget'),
         numberField('requestImageMaxBytes'),
         jsonField('modelLimits'),
+        jsonField('enabledModels'),
       ],
       [{ field: API_KEY_FIELD, write: text => this.writeKey(text) }],
     )
     this.store = this.form.bind(() => this.projection())
     this.unsubscribe = scope.subscribe(() => { void this.readCredential() })
+    this.unsubscribeForm = this.store.subscribe(() => { this.syncUnloadGuard() })
     void this.readCredential()
   }
 
@@ -209,16 +231,18 @@ export class OpencodeZenSectionController {
   dispose(): void {
     this.modelsRequest++
     this.unsubscribe()
+    this.unsubscribeForm()
+    this.syncUnloadGuard(false)
     this.form.dispose()
   }
 
   private projection(): OpencodeZenSectionState {
     return {
       ...this.form.shell(),
-      enabled: this.enabled(),
-      showDeprecatedModels: this.scope.getSnapshot().value?.showDeprecatedModels ?? false,
-      pickerSaving: this.pickerSaving,
-      pickerFailed: this.pickerFailed,
+      enabled: this.stagedSwitch('enabled', true),
+      showDeprecatedModels: this.stagedSwitch('showDeprecatedModels', false),
+      checkedModels: this.visibleChecks(),
+      checkedCount: this.checkedCount(),
       apiKeyEnv: this.form.field('apiKeyEnv'),
       baseURL: this.form.field('baseURL'),
       refreshMinutes: this.form.field('refreshMinutes'),
@@ -254,44 +278,132 @@ export class OpencodeZenSectionController {
   }
 
   /**
-   * The adapter's effective switch state: the resolved section's value, over
-   * the Host's own default when the section carries none.
-   * @returns whether the route is currently served.
+   * Read one switch as the page currently shows it: the staged draft when one
+   * exists, over the resolved section's value, over the Host's own default.
+   *
+   * Both switches are staged with everything else now, so the control reports
+   * what a save would store rather than what the Host holds; the page's Save
+   * button is the whole feedback loop.
+   * @param field - the switch's field name.
+   * @param fallback - the state when neither the draft nor the section carries one.
+   * @returns whether the switch reads as on.
    */
-  private enabled(): boolean {
-    return this.scope.getSnapshot().value?.enabled ?? true
+  private stagedSwitch(field: 'enabled' | 'showDeprecatedModels', fallback: boolean): boolean {
+    const staged = this.form.field(field)
+    // A field whose value is not a boolean formats as empty text, which is the
+    // one case the fallback answers.
+    return staged.text === '' ? fallback : staged.text === 'true'
+  }
+
+  /** Every id the current listing serves; empty until a listing has been read. */
+  private listedIds(): readonly string[] {
+    return this.models.status === 'ready' ? this.models.entries.map(entry => entry.id) : []
   }
 
   /**
-   * Flip the switch by writing the field on the click itself.
+   * The whitelist as staged or stored, or undefined while it was never set.
    *
-   * This is the one control on the page that does not wait for Save: the point
-   * of turning it off is to watch the models leave the pickers, and the point
-   * of turning it back on is to use the route again — staging either behind a
-   * second gesture would report a state the Host does not hold. The write is
-   * revision-fenced by the scope like every other, and a refusal surfaces as a
-   * failed save through the shared shell rather than a silent revert.
-   * @param next - the state the switch asks for.
+   * A malformed draft falls back to the last accepted settings value, the same
+   * way the capacity table reads its own JSON field, so a broken draft never
+   * silently drops ids that are not on screen.
    */
-  setEnabled(next: boolean): void {
-    void this.scope.set('enabled', next)
+  private checkedDraft(): string[] | undefined {
+    const staged = this.form.field('enabledModels')
+    if (staged.invalid) return idsOf(this.scope.getSnapshot().value?.enabledModels)
+    if (staged.text.trim() === '') return undefined
+    try {
+      return idsOf(JSON.parse(staged.text) as unknown)
+    } catch {
+      return idsOf(this.scope.getSnapshot().value?.enabledModels)
+    }
   }
 
-  /** Visibility is immediate; failed writes leave the committed switch state visible. */
-  async setShowDeprecatedModels(next: boolean): Promise<void> {
-    if (this.pickerSaving || !this.scope.getSnapshot().writable) return
-    this.pickerSaving = true
-    this.pickerFailed = false
-    this.store.set(this.projection())
-    try {
-      await this.scope.set('showDeprecatedModels', next)
-      this.pickerFailed = (this.scope.getSnapshot().value?.showDeprecatedModels ?? false) !== next
-    } catch {
-      this.pickerFailed = true
-    } finally {
-      this.pickerSaving = false
-      this.store.set(this.projection())
+  /**
+   * The whitelist as the page shows it. A never-set field is not an empty
+   * selection: it means every model the gateway serves, so the listing answers
+   * for it and every row renders checked.
+   */
+  private visibleChecks(): readonly string[] {
+    return this.checkedDraft() ?? this.listedIds()
+  }
+
+  /** How many of the listed models the pickers would offer. */
+  private checkedCount(): number {
+    const checked = new Set(this.visibleChecks())
+    return this.listedIds().filter(id => checked.has(id)).length
+  }
+
+  /**
+   * Stage one model's membership in the picker whitelist.
+   *
+   * The first edit materializes the whitelist. A document without one means
+   * "every model", and the only moment the page knows which models those are is
+   * while the gateway listing is in hand, so the draft starts as the current
+   * listing and this edit lands on top of it. From then on the stored list is
+   * authoritative, which is exactly what keeps a model that appears later out of
+   * the pickers until someone checks it.
+   *
+   * Nothing is cleaned up along the way: an id whose model has left the listing
+   * stays in the list, so the model comes back checked if it returns.
+   * @param id - the gateway model id the checkbox names.
+   * @param checked - the state the checkbox asks for.
+   */
+  setModelChecked(id: string, checked: boolean): void {
+    if (!this.scope.getSnapshot().writable) return
+    const current = this.checkedDraft() ?? this.listedIds()
+    const next = new Set(current)
+    if (checked) next.add(id)
+    else next.delete(id)
+    // An id already in the state the checkbox asks for stages nothing, so a
+    // no-op click never makes the form dirty.
+    if (next.size === current.length) return
+    this.stageChecked([...next])
+  }
+
+  /**
+   * Stage an empty whitelist. Saved, that withdraws the provider from the
+   * pickers entirely rather than leaving an empty one there.
+   */
+  clearModelChecks(): void {
+    if (!this.scope.getSnapshot().writable) return
+    if (this.checkedDraft()?.length === 0) return
+    this.stageChecked([])
+  }
+
+  /**
+   * Stage the whitelist through the shared JSON field. The draft is indented
+   * the way that field formats a stored value, so a draft that matches what is
+   * already stored leaves the form clean instead of planning a cosmetic write.
+   * @param ids - the ids the saved list should carry, in the order staged.
+   */
+  private stageChecked(ids: readonly string[]): void {
+    this.form.actions().edit('enabledModels', JSON.stringify(ids, undefined, 2))
+  }
+
+  /**
+   * Keep the browser's unsaved-changes prompt in step with the staged form: it
+   * is armed only while a save would write something, and disarmed the moment
+   * the form is clean again.
+   * @param dirty - whether the form holds edits; defaults to the store's own read.
+   */
+  private syncUnloadGuard(dirty = this.store.getSnapshot().dirty): void {
+    // The client bundle only ever runs in a browser; the guard keeps the module
+    // importable from a non-DOM test or build step.
+    if (typeof window === 'undefined') return
+    if (dirty === (this.unloadGuard !== undefined)) return
+    if (!dirty) {
+      window.removeEventListener('beforeunload', this.unloadGuard!)
+      this.unloadGuard = undefined
+      return
     }
+    const guard = (event: BeforeUnloadEvent): void => {
+      // Both spellings: preventDefault is the standard, and the legacy
+      // returnValue is what older engines actually read.
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    this.unloadGuard = guard
+    window.addEventListener('beforeunload', guard)
   }
 
   /**
@@ -380,8 +492,8 @@ export class OpencodeZenSectionController {
     this.face ??= {
       hooks: { opencodeZen: this.store },
       loadModels: () => { this.loadModels() },
-      setEnabled: (next) => { this.setEnabled(next) },
-      setShowDeprecatedModels: (next) => { void this.setShowDeprecatedModels(next) },
+      setModelChecked: (id, checked) => { this.setModelChecked(id, checked) },
+      clearModelChecks: () => { this.clearModelChecks() },
       ...this.form.actions(),
     }
     return this.face
@@ -424,6 +536,19 @@ function modelLimitsOf(value: unknown): OpencodeZenModelLimits {
     if (limit.contextWindow !== undefined || limit.maxTokens !== undefined) limits[id] = limit
   }
   return limits
+}
+
+/**
+ * Read a stored whitelist without trusting its hand-editable shape. Only
+ * non-empty strings survive, deduplicated in order; anything else reads as "the
+ * field says nothing", which is undefined.
+ * @param value - the stored field value.
+ * @returns the ids it names, or undefined when it names none.
+ */
+function idsOf(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = value.filter((id): id is string => typeof id === 'string' && id.length > 0)
+  return [...new Set(ids)]
 }
 
 /**

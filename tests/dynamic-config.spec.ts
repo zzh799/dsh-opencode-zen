@@ -291,6 +291,50 @@ describe('settings-backed configuration', () => {
     expect(gateway.paths.filter(path => path === '/chat/completions')).toHaveLength(2)
   })
 
+  it('filters pickers by the whitelist, keeping stale ids, and withdraws on none', async () => {
+    const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
+    gateway.pushCompletions({ events: textEvents })
+    gateway.pushCompletions({ events: textEvents })
+    const ctx = await boot({
+      settingsYaml: '',
+      credentials: { OPENCODE_API_KEY: 'test-key' },
+      baseURL: gateway.url,
+    })
+    await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
+
+    // Upgrade posture: a document without the field offers every model.
+    expect((await ctx.llm.listModels('opencode-zen')).map(model => model.id)).toEqual(fullLiveListing())
+
+    await ctx.settings.update(NS, { enabledModels: ['kimi-k3'] })
+    expect((await ctx.llm.listModels('opencode-zen')).map(model => model.id)).toEqual(['kimi-k3'])
+
+    // The picker list is all the whitelist narrows: a model id named explicitly
+    // (a headless patch, a running conversation) still serves.
+    await streamOnce(ctx)
+
+    // An id the catalog no longer serves stays written down: the picker hides
+    // it while it is gone, and nothing washes it out of the document.
+    await ctx.settings.update(NS, { enabledModels: ['kimi-k3', 'retired'] })
+    expect((await ctx.llm.listModels('opencode-zen')).map(model => model.id)).toEqual(['kimi-k3'])
+    expect(ctx.settings.describe().find(view => view.ns === NS)?.value)
+      .toMatchObject({ enabledModels: ['kimi-k3', 'retired'] })
+
+    // An empty whitelist leaves the picker the way the switch does: the
+    // provider itself goes, rather than sitting there with nothing to offer.
+    await ctx.settings.update(NS, { enabledModels: [] })
+    await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 }).toEqual([])
+    await expect(ctx.llm.listModels('opencode-zen')).rejects.toThrow()
+
+    // Checking a model again brings the route back without a restart.
+    await ctx.settings.update(NS, { enabledModels: ['kimi-k3'] })
+    await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
+    expect((await ctx.llm.listModels('opencode-zen')).map(model => model.id)).toEqual(['kimi-k3'])
+    await streamOnce(ctx)
+    expect(gateway.paths.filter(path => path === '/chat/completions')).toHaveLength(2)
+  })
+
   it('refuses a write whose baseURL is not usable, leaving the document untouched', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     gateway.pushCompletions({ events: textEvents })

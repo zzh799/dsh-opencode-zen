@@ -68,3 +68,59 @@ it('uses actual release dates for the seven-day badge and sorts deprecated model
     { id: 'normal' }, { id: 'new', releaseDate: '2026-09-22' },
   ], now).map(m => m.id)).toEqual(['new', 'normal', 'old'])
 })
+
+it('round-trips the picker whitelist, keeping "never set" distinct from "none"', () => {
+  // The upgrade posture: a document that predates the field parses to nothing
+  // at all, which is what "every model visible" is read from. A schema default
+  // of `[]` would have turned every upgrade into "nothing checked".
+  expect(PlainConfig({}).enabledModels).toBeUndefined()
+  expect(PlainConfig({ enabledModels: null }).enabledModels).toBeNull()
+  expect(PlainConfig({ enabledModels: ['a', 'b'] }).enabledModels).toEqual(['a', 'b'])
+  expect(PlainConfig({ enabledModels: [] }).enabledModels).toEqual([])
+  expect(() => PlainConfig({ enabledModels: 'a' })).toThrow(/expected/)
+})
+
+it('filters picker entries by the whitelist without blocking explicit model ids', async () => {
+  const original = globalThis.fetch
+  vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => String(input) === MODELS_METADATA_URL
+    ? Promise.resolve(Response.json(metadataDocument({
+      alpha: modelMetadata({ name: 'Alpha' }),
+      beta: modelMetadata({ name: 'Beta' }),
+      old: modelMetadata({ name: 'Old', status: 'deprecated' }),
+    }))) : original(input, init))
+  const gateway = await mockGateway({ status: 200, body: listingBody(['alpha', 'beta', 'old']) })
+  const config = configOf(`${gateway.url}/v1`)
+  const adapter = new OpencodeZenAdapter({ config: () => config, resolveApiKey: async () => 'test-key' })
+  const visible = async (): Promise<string[]> => (await adapter.listModels('opencode-zen')).map(model => model.id)
+  try {
+    // Never set: every model the gateway serves stays in the picker.
+    expect(await visible()).toEqual(['alpha', 'beta'])
+
+    config.enabledModels = ['beta']
+    expect(await visible()).toEqual(['beta'])
+
+    // Whitelist and deprecated switch are orthogonal: the whitelist never
+    // resurrects a deprecated model, and the switch never adds one the
+    // whitelist left out.
+    config.showDeprecatedModels = true
+    expect(await visible()).toEqual(['beta'])
+    config.enabledModels = ['beta', 'old', 'gamma']
+    expect(await visible()).toEqual(['beta', 'old'])
+
+    // An id the catalog no longer serves is not listed, and never throws.
+    config.enabledModels = ['gamma', 'alpha']
+    expect(await visible()).toEqual(['alpha'])
+
+    // Nothing checked is an empty picker list, not a failure.
+    config.enabledModels = []
+    expect(await visible()).toEqual([])
+
+    // The whitelist filters the picker alone: an explicitly named id still runs.
+    gateway.pushCompletions({ events: textEvents })
+    const chunks = []
+    for await (const chunk of adapter.stream({ provider: 'opencode-zen', model: 'alpha',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'plugin', plugin: 'test' } })] })) chunks.push(chunk)
+    expect(chunks.find(chunk => chunk.type === 'finish')).toMatchObject({ reason: { kind: 'stop' } })
+    expect(await adapter.resolveModel('opencode-zen', 'alpha')).toMatchObject({ id: 'alpha' })
+  } finally { await closeMockGateways() }
+})

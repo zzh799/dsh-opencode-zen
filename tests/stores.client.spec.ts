@@ -586,4 +586,117 @@ describe('OpencodeZenSectionController', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(state().models).toEqual({ status: 'ready', count: 1, preview: ['second'], entries: [{ id: 'second' }] })
   })
+
+  /** The two-model listing the whitelist tests work against. */
+  const twoModels = (): Mock => vi.fn(() => Promise.resolve(discovered([
+    { id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' },
+  ])))
+
+  /** Mount a controller over a listing, and wait until its models are in hand. */
+  async function readyWithModels(
+    host: ReturnType<typeof stubSettingsScope<OpencodeZenSettings>>,
+    value: OpencodeZenSettings,
+  ): Promise<OpencodeZenSectionController> {
+    acceptWrites(host)
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(twoModels()))
+    host.publish(ready(value))
+    controller.loadModels()
+    await vi.waitFor(() => {
+      expect(controller.inject().hooks.opencodeZen.getSnapshot().models.status).toBe('ready')
+    })
+    return controller
+  }
+
+  it('reads an unset whitelist as every listed model and materializes it on the first check', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    const controller = await readyWithModels(host, {})
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
+    const face = controller.inject()
+
+    // Absent is not empty: a document without the field shows every model.
+    expect(state().checkedModels).toEqual(['a', 'b'])
+    expect(state().checkedCount).toBe(2)
+
+    face.setModelChecked('b', false)
+    expect(state().checkedModels).toEqual(['a'])
+    expect(state().checkedCount).toBe(1)
+    expect(state().dirty).toBe(true)
+    expect(host.set).not.toHaveBeenCalled()
+
+    face.save()
+    await vi.waitFor(() => { expect(state().dirty).toBe(false) })
+    // The materialized snapshot is the whole listing minus the unchecked model.
+    expect(host.set).toHaveBeenCalledWith('enabledModels', ['a'])
+  })
+
+  it('stages no write when a check asks for the state the model is already in', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    const controller = await readyWithModels(host, { enabledModels: ['a'] })
+    const face = controller.inject()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
+
+    face.setModelChecked('b', false)
+    expect(state().dirty).toBe(false)
+
+    face.setModelChecked('a', true)
+    expect(state().dirty).toBe(false)
+
+    face.setModelChecked('b', true)
+    expect(state().dirty).toBe(true)
+  })
+
+  it('saves an unrelated field without materializing the whitelist', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    const controller = await readyWithModels(host, {})
+    const face = controller.inject()
+
+    face.edit('baseURL', 'https://other.test/v1')
+    face.save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('baseURL', 'https://other.test/v1') })
+
+    // Only a whitelist edit materializes it; the field stays absent otherwise.
+    expect(host.set.mock.calls.map(([field]) => field)).toEqual(['baseURL'])
+  })
+
+  it('clears the whitelist through the batch action, including one that was never set', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    const controller = await readyWithModels(host, {})
+    const face = controller.inject()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
+
+    face.clearModelChecks()
+    expect(state().checkedModels).toEqual([])
+    expect(state().checkedCount).toBe(0)
+    face.save()
+    await vi.waitFor(() => { expect(state().dirty).toBe(false) })
+    expect(host.set).toHaveBeenCalledWith('enabledModels', [])
+  })
+
+  it('keeps ids the listing no longer serves, in the order they were stored', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    const controller = await readyWithModels(host, { enabledModels: ['a', 'retired'] })
+    const face = controller.inject()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
+
+    // The retired id stays in the draft and in the saved list: a model that
+    // comes back to the listing comes back checked.
+    expect(state().checkedModels).toEqual(['a', 'retired'])
+    expect(state().checkedCount).toBe(1)
+
+    face.setModelChecked('b', true)
+    face.save()
+    await vi.waitFor(() => { expect(state().dirty).toBe(false) })
+    expect(host.set).toHaveBeenCalledWith('enabledModels', ['a', 'retired', 'b'])
+  })
+
+  it('stages nothing on a read-only document', async () => {
+    const host = stubSettingsScope<OpencodeZenSettings>()
+    const controller = await readyWithModels(host, {})
+    host.publish({ writable: false })
+    const face = controller.inject()
+
+    face.setModelChecked('a', false)
+    face.clearModelChecks()
+    expect(controller.inject().hooks.opencodeZen.getSnapshot().dirty).toBe(false)
+  })
 })
