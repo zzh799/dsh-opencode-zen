@@ -19,7 +19,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { LocalCredentialProvider } from '@deepseek-ai/dsh-credentials-local'
 import LlmRuntime, { createUserMessage, userAgent } from '@deepseek-ai/dsh-llm'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import * as OpencodeGo from '../src/index.ts'
+import * as OpencodeZen from '../src/index.ts'
 import { closeMockGateways, fullLiveListing, listingBody, mockGateway, textEvents } from './mock-gateway.ts'
 
 let root: string | undefined
@@ -37,7 +37,7 @@ afterEach(async () => {
 
 /** Boot the given composition rows through the Loader and require every row to mount. */
 async function loadComposition(lines: readonly string[]): Promise<Context> {
-  root = await mkdtemp(join(tmpdir(), 'dsh-opencode-go-loader-'))
+  root = await mkdtemp(join(tmpdir(), 'dsh-opencode-zen-loader-'))
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, [...lines, ''].join('\n'))
   const ctx = new Context()
@@ -48,7 +48,7 @@ async function loadComposition(lines: readonly string[]): Promise<Context> {
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-llm', LlmRuntime],
     ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
-    ['dsh-opencode-go', OpencodeGo],
+    ['dsh-opencode-zen', OpencodeZen],
   ])
   ctx.loader.internal = {
     version: 'v2',
@@ -69,28 +69,28 @@ async function loadComposition(lines: readonly string[]): Promise<Context> {
   return ctx
 }
 
-describe('llm-opencode-go through a real Loader composition', () => {
+describe('llm-opencode-zen through a real Loader composition', () => {
   it('serves the gateway catalog and routes a stream with the session header', async () => {
     vi.stubEnv('OPENCODE_API_KEY', 'loader-key')
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     gateway.pushCompletions({ events: textEvents })
     const ctx = await loadComposition([
       "- name: '@deepseek-ai/dsh-llm'",
-      "- name: 'dsh-opencode-go'",
+      "- name: 'dsh-opencode-zen'",
       '  config:',
       `    baseURL: ${gateway.url}`,
     ])
 
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-      .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
     // The supplemented model reaches the picker through the loaded row.
-    await expect(ctx.llm.listModels('opencode-go')).resolves.toContainEqual(
+    await expect(ctx.llm.listModels('opencode-zen')).resolves.toContainEqual(
       expect.objectContaining({ id: 'deepseek-v4.1-flash' }),
     )
 
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'hi' }],
@@ -109,7 +109,7 @@ describe('llm-opencode-go through a real Loader composition', () => {
 
   it('registers the route when the credentials seam becomes active after the plugin', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const credDir = await mkdtemp(join(tmpdir(), 'dsh-opencode-go-cred-'))
+    const credDir = await mkdtemp(join(tmpdir(), 'dsh-opencode-zen-cred-'))
     tempDirs.push(credDir)
     const credPath = join(credDir, '.credentials.yaml')
     await writeFile(credPath, 'version: 1\nrefs:\n  OPENCODE_API_KEY: loader-key\n', { mode: 0o600 })
@@ -119,7 +119,7 @@ describe('llm-opencode-go through a real Loader composition', () => {
     // at boot, not only at the next credentials write.
     const ctx = await loadComposition([
       "- name: '@deepseek-ai/dsh-llm'",
-      "- name: 'dsh-opencode-go'",
+      "- name: 'dsh-opencode-zen'",
       '  config:',
       `    baseURL: ${gateway.url}`,
       "- name: '@deepseek-ai/dsh-credentials-local'",
@@ -129,6 +129,6 @@ describe('llm-opencode-go through a real Loader composition', () => {
     ])
 
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-      .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
   })
 })

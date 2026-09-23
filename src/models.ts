@@ -1,15 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { discoverSettingsModels, type OpencodeGoCatalog } from './catalog.ts'
-import type { GoModel } from './models-contract.ts'
+import { discoverSettingsModels, type OpencodeZenCatalog } from './catalog.ts'
+import type { ZenModel } from './models-contract.ts'
 
 /** Uses the same gateway snapshot as the adapter, including models hidden from pickers. */
-export class GoModelsService extends TypertRemoteService {
-  constructor(ctx: Context, private readonly options: { catalog: () => OpencodeGoCatalog }) {
-    super(ctx, 'opencodeGoModels')
+export class ZenModelsService extends TypertRemoteService {
+  constructor(ctx: Context, private readonly options: { catalog: () => OpencodeZenCatalog }) {
+    super(ctx, 'opencodeZenModels')
   }
 
-  read(): Promise<readonly GoModel[]> {
+  read(): Promise<readonly ZenModel[]> {
     return discoverSettingsModels(this.options.catalog())
   }
 }

@@ -1,13 +1,13 @@
 /** Convert OpenCode's online models.dev metadata into the SDK's three wire protocols. */
 import type { Api, Model, ModelCost, ModelThinkingLevel, ThinkingLevelMap } from '@earendil-works/pi-ai'
 
-import { validReleaseDate, type GoModel } from './models-contract.ts'
+import { validReleaseDate, type ZenModel } from './models-contract.ts'
 
 export const MODEL_METADATA_URL = 'https://models.dev/api.json'
 
 export interface ModelMetadata {
   readonly models: ReadonlyMap<string, Model<Api>>
-  readonly details: ReadonlyMap<string, Pick<GoModel, 'deprecated' | 'releaseDate'>>
+  readonly details: ReadonlyMap<string, Pick<ZenModel, 'deprecated' | 'releaseDate'>>
   readonly errors: ReadonlyMap<string, string>
 }
 
@@ -63,19 +63,21 @@ export function modelBaseURL(api: Api, baseURL: string): string {
 }
 
 /**
- * Only read the opencode-go record. Online endpoints, headers and credentials
- * are deliberately ignored: model traffic always stays on the configured gateway.
+ * Only read the `opencode` record (models.dev's key for OpenCode Zen; the
+ * sibling `opencode-go` record belongs to the Go subscription this plugin no
+ * longer serves). Online endpoints, headers and credentials are deliberately
+ * ignored: model traffic always stays on the configured gateway.
  * A bad entry is isolated instead of discarding every other model.
  */
 export function readModelMetadata(body: unknown, baseURL: string, builtin: ReadonlyMap<string, Model<Api>>): ModelMetadata {
-  const provider = record(record(body)['opencode-go'])
+  const provider = record(record(body)['opencode'])
   if (provider.models === null || typeof provider.models !== 'object' || Array.isArray(provider.models)) {
-    throw new Error('models.dev has no opencode-go models object')
+    throw new Error('models.dev has no opencode models object')
   }
   const entries = record(provider.models)
   const models = new Map<string, Model<Api>>()
   const errors = new Map<string, string>()
-  const details = new Map<string, Pick<GoModel, 'deprecated' | 'releaseDate'>>()
+  const details = new Map<string, Pick<ZenModel, 'deprecated' | 'releaseDate'>>()
   for (const [id, value] of Object.entries(entries)) {
     const data = record(value)
     details.set(id, { deprecated: data.status === 'deprecated',
@@ -117,7 +119,7 @@ export function readModelMetadata(body: unknown, baseURL: string, builtin: Reado
       models.set(id, {
         id,
         name: typeof metadata.name === 'string' && metadata.name.length > 0 ? metadata.name : id,
-        provider: 'opencode-go', api, baseUrl: modelBaseURL(api, baseURL),
+        provider: 'opencode-zen', api, baseUrl: modelBaseURL(api, baseURL),
         reasoning: metadata.reasoning,
         thinkingLevelMap: thinkingLevels(metadata, known),
         input: input.includes('image') ? ['text', 'image'] : ['text'],

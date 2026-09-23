@@ -1,10 +1,10 @@
-# dsh-opencode-go
+# dsh-opencode-zen
 
 [中文](README.md)
 
-Use OpenCode Go subscription models in [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), with streaming replies, tool calls, and image input.
+Use OpenCode Zen, OpenCode's pay-as-you-go model gateway, in [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), with streaming replies, tool calls, and image input.
 
-The plugin automatically adds the session headers required by OpenCode Go, reads the gateway model catalog, and displays subscription usage. There is no need to configure model protocols, modalities, context windows, or maximum output tokens manually.
+The plugin automatically adds the session headers required by OpenCode Zen and reads the gateway model catalog. There is no need to configure model protocols, modalities, context windows, or maximum output tokens manually.
 
 ## Features
 
@@ -21,33 +21,31 @@ Supported DSH versions: `0.1.5-rc.1`, `0.1.5-rc.2`, `0.1.6-alpha.1`, `0.1.6-alph
 ### Install from DSH (recommended)
 
 1. Open the **Plugins** page in DSH and click **Add plugin** in the top-right corner.
-2. Enter `dsh-opencode-go` and click **Install**.
+2. Enter `dsh-opencode-zen` and click **Install**.
 3. If prompted after installation, click **Enable now**.
 
-![Add, install, and enable dsh-opencode-go from DSH (Chinese UI)](docs/assets/install-via-dsh.gif)
-
-Then open **Settings → OpenCode Go**, enter and save your API key, and select an OpenCode Go model in a conversation.
+Then open **Settings → OpenCode Zen**, enter and save your API key, and select an OpenCode Zen model in a conversation.
 
 If your DSH version does not have an **Add plugin** entry, use the command-line method below.
 
 ### Command-line installation (alternative)
 
 ```sh
-dsh plugin --profile web add dsh-opencode-go@0.1.9
+dsh plugin --profile web add dsh-opencode-zen@0.2.0
 ```
 
 Start or restart `dsh web`, then:
 
-1. Open **Settings → OpenCode Go**.
-2. Enter and save your OpenCode Go API key.
-3. Select an OpenCode Go model from the conversation model picker.
+1. Open **Settings → OpenCode Zen**.
+2. Enter and save your OpenCode Zen API key.
+3. Select an OpenCode Zen model from the conversation model picker.
 
 ### Headless
 
 Install the plugin into the Headless profile:
 
 ```sh
-dsh plugin --profile headless add dsh-opencode-go@0.1.9
+dsh plugin --profile headless add dsh-opencode-zen@0.2.0
 ```
 
 Save the following as `headless.patch.yml` to select a default model:
@@ -55,7 +53,7 @@ Save the following as `headless.patch.yml` to select a default model:
 ```yaml
 - id: agent-default-model
   config:
-    provider: opencode-go
+    provider: opencode-zen
     model: deepseek-v4.1-flash
 ```
 
@@ -74,7 +72,7 @@ To build from source and install a local package:
 ```sh
 npm ci --legacy-peer-deps
 npm pack
-dsh plugin --profile web add ./dsh-opencode-go-0.1.9.tgz
+dsh plugin --profile web add ./dsh-opencode-zen-0.2.0.tgz
 ```
 
 The development dependencies include real test packages from multiple DSH generations, so installation requires `--legacy-peer-deps`. For Headless, replace `web` with `headless`.
@@ -84,24 +82,20 @@ The development dependencies include real test packages from multiple DSH genera
 Update the plugin in the Web profile to the latest npm version:
 
 ```sh
-dsh plugin --profile web update dsh-opencode-go --latest
+dsh plugin --profile web update dsh-opencode-zen --latest
 ```
 
 Restart `dsh web` and refresh the browser afterwards. For Headless, replace `web` with `headless`; if both profiles have the plugin installed, update each one separately.
 
-## Subscription usage display
-
-![OpenCode Go usage display](image.png)
-
 ## FAQ
 
-### The `opencode-go` route is already in use
+### The `opencode-zen` route is already in use
 
-Only one adapter in a profile can provide the `opencode-go` route. If another plugin or a generic pi-ai configuration already connects OpenCode Go, disable that configuration first. Other providers can continue to run.
+Only one adapter in a profile can provide the `opencode-zen` route. If another plugin or a generic pi-ai configuration already connects OpenCode Zen, disable that configuration first. Other providers can continue to run.
 
 ### An expected model is missing
 
-Confirm that the plugin is enabled and an API key is configured, then refresh the model list in Settings. Each model-list read requests the gateway's `/models` endpoint and synchronizes the OpenCode Go configuration from [models.dev](https://models.dev/api.json). Protocol support, context length, output limit, and image capability come from the online configuration, so new models do not require a release of this plugin or pi-ai.
+Confirm that the plugin is enabled and an API key is configured, then refresh the model list in Settings. Each model-list read requests the gateway's `/models` endpoint and synchronizes the OpenCode Zen configuration from [models.dev](https://models.dev/api.json). Protocol support, context length, output limit, and image capability come from the online configuration, so new models do not require a release of this plugin or pi-ai.
 
 Models that are present in the gateway and have an entry using Anthropic Messages, OpenAI Chat Completions, or OpenAI Responses become available on the next list read or refresh. Refresh bypasses the existing catalog cache; a direct request for a previously unseen model also triggers an immediate resynchronization. The Settings page shows the complete discovery result.
 
@@ -116,9 +110,9 @@ If the online configuration is temporarily unavailable, the plugin prefers a con
 Remove the plugin from the relevant profile and restart the application:
 
 ```sh
-dsh plugin --profile web remove dsh-opencode-go
+dsh plugin --profile web remove dsh-opencode-zen
 # or
-dsh plugin --profile headless remove dsh-opencode-go
+dsh plugin --profile headless remove dsh-opencode-zen
 ```
 
 ## Feedback

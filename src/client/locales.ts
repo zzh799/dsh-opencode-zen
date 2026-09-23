@@ -1,25 +1,15 @@
-/** Copy dictionaries for the OpenCode Go settings page. English is the key-set source of truth. */
+/** Copy dictionaries for the OpenCode Zen settings page. English is the key-set source of truth. */
 
 export const en = {
-  usageTitle: 'OpenCode Go usage',
-  usageHint: 'Account usage · used percentage · refreshes every minute',
-  usageWeekShort: 'week',
-  usage_rolling: '5 hours',
-  usage_weekly: 'Weekly',
-  usage_monthly: 'Monthly',
-  usageResets: 'Resets',
-  usageLimited: 'Limit reached',
-  usageLoading: 'Loading usage…',
-  usageUnavailable: 'Unavailable',
-  nav: 'OpenCode Go',
-  title: 'OpenCode Go',
-  intro: 'Manage your OpenCode Go subscription models and their capacities.',
-  enabledLabel: 'Enable OpenCode Go',
-  enabledHint: 'While this is on, OpenCode Go appears in every model picker and can serve requests. Turning it off withdraws the provider and its models immediately; this page stays reachable so you can turn it back on.',
-  enabledOff: 'OpenCode Go is off. Its models are withdrawn from every picker and no request reaches the gateway. Turn the switch back on to use it again.',
+  nav: 'OpenCode Zen',
+  title: 'OpenCode Zen',
+  intro: 'Manage the models OpenCode Zen serves on this gateway and their capacities.',
+  enabledLabel: 'Enable OpenCode Zen',
+  enabledHint: 'While this is on, OpenCode Zen appears in every model picker and can serve requests. Turning it off withdraws the provider and its models immediately; this page stays reachable so you can turn it back on.',
+  enabledOff: 'OpenCode Zen is off. Its models are withdrawn from every picker and no request reaches the gateway. Turn the switch back on to use it again.',
   enabledUnavailable: 'This deployment pins the switch on in its composition, so it cannot be changed here.',
   keyLabel: 'API key',
-  keyHint: 'From your OpenCode Go subscription (opencode.ai). Leaving this blank keeps the key already saved, and a saved key applies to the next request without a restart.',
+  keyHint: 'From your OpenCode Zen account (opencode.ai). Leaving this blank keeps the key already saved, and a saved key applies to the next request without a restart.',
   keyConfigured: 'Key saved',
   keyMissing: 'No key yet',
   keyNotWritable: 'This key is supplied from outside the settings document (an environment variable, for example), so it cannot be changed here.',
@@ -83,30 +73,20 @@ export const en = {
   saving: 'Saving…',
   savedFailed: 'The last save did not land as staged; correct the values or discard.',
   readOnly: 'The settings document is read-only in this deployment.',
-  unavailable: 'The OpenCode Go settings are not served in this deployment.',
+  unavailable: 'The OpenCode Zen settings are not served in this deployment.',
 }
 
 /** Chinese copy; the key set mirrors {@link en}. */
 export const zh: typeof en = {
-  usageTitle: 'OpenCode Go 用量',
-  usageHint: '账号额度 · 已用百分比 · 每分钟刷新',
-  usageWeekShort: '周',
-  usage_rolling: '5 小时',
-  usage_weekly: '每周',
-  usage_monthly: '每月',
-  usageResets: '重置于',
-  usageLimited: '已达限额',
-  usageLoading: '正在读取用量…',
-  usageUnavailable: '暂不可用',
-  nav: 'OpenCode Go',
-  title: 'OpenCode Go',
-  intro: '管理 OpenCode Go 订阅模型及其容量。',
-  enabledLabel: '启用 OpenCode Go',
-  enabledHint: '开启时，OpenCode Go 会出现在所有模型选择器中并可处理请求。关闭后将立即撤下该提供方及其模型；本页仍可访问，方便你随时重新开启。',
-  enabledOff: 'OpenCode Go 已关闭。其模型已从所有选择器中撤下，也不会有请求发往网关。需要时把开关重新打开即可。',
+  nav: 'OpenCode Zen',
+  title: 'OpenCode Zen',
+  intro: '管理本网关上的 OpenCode Zen 模型及其容量。',
+  enabledLabel: '启用 OpenCode Zen',
+  enabledHint: '开启时，OpenCode Zen 会出现在所有模型选择器中并可处理请求。关闭后将立即撤下该提供方及其模型；本页仍可访问，方便你随时重新开启。',
+  enabledOff: 'OpenCode Zen 已关闭。其模型已从所有选择器中撤下，也不会有请求发往网关。需要时把开关重新打开即可。',
   enabledUnavailable: '此部署在组合层固定开启了该开关，无法在此修改。',
   keyLabel: 'API key',
-  keyHint: '来自你的 OpenCode Go 订阅（opencode.ai）。留空表示保持已保存的 key；保存后下一次请求即生效，无需重启。',
+  keyHint: '来自你的 OpenCode Zen 账户（opencode.ai）。留空表示保持已保存的 key；保存后下一次请求即生效，无需重启。',
   keyConfigured: '已配置 key',
   keyMissing: '尚未配置',
   keyNotWritable: '该 key 由设置文档之外的来源提供（例如环境变量），无法在此修改。',
@@ -170,8 +150,8 @@ export const zh: typeof en = {
   saving: '保存中…',
   savedFailed: '上次保存未按草稿生效；请修正数值或放弃修改。',
   readOnly: '此部署中设置文档为只读。',
-  unavailable: '此部署未提供 OpenCode Go 设置。',
+  unavailable: '此部署未提供 OpenCode Zen 设置。',
 }
 
 /** Every copy key this page's dictionaries must supply. */
-export type OpencodeGoKey = keyof typeof en
+export type OpencodeZenKey = keyof typeof en

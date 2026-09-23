@@ -8,13 +8,13 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-llm'
 import { MODEL_METADATA_URL, modelBaseURL, readModelMetadata } from './model-metadata.ts'
-import { sortModels, type GoModel } from './models-contract.ts'
+import { sortModels, type ZenModel } from './models-contract.ts'
 import type { ModelMetadata } from './model-metadata.ts'
 import { readJsonResponse } from './json-response.ts'
 
-export const PROVIDER_ID = 'opencode-go'
-export const DISPLAY_NAME = 'OpenCode Go'
-export const DEFAULT_BASE_URL = 'https://opencode.ai/zen/go/v1'
+export const PROVIDER_ID = 'opencode-zen'
+export const DISPLAY_NAME = 'OpenCode Zen'
+export const DEFAULT_BASE_URL = 'https://opencode.ai/zen/v1'
 const MODELS_FETCH_TIMEOUT_MS = 10_000
 const MODEL_LISTING_MAX_BYTES = 1024 * 1024
 const MODEL_METADATA_MAX_BYTES = 16 * 1024 * 1024
@@ -31,7 +31,9 @@ export interface CatalogSnapshot {
 
 /** Built-ins are outage fallbacks and compatibility hints, never a membership whitelist. */
 function builtinModels(baseURL: string): Map<string, Model<Api>> {
-  return new Map((getBuiltinModels('opencode-go') as Model<Api>[]).map(model => [model.id, {
+  // models.dev keys this gateway's metadata under `opencode` (OpenCode Zen);
+  // `opencode-go` is the retired Go subscription's record.
+  return new Map((getBuiltinModels('opencode') as Model<Api>[]).map(model => [model.id, {
     ...model, provider: PROVIDER_ID, baseUrl: modelBaseURL(model.api, baseURL),
   }]))
 }
@@ -85,7 +87,7 @@ function buildProvider(baseURL: string, models: readonly Model<Api>[]): Provider
 }
 
 /** Runtime requests reuse a snapshot; discovery revalidates it. Concurrent reads coalesce. */
-export class OpencodeGoCatalog {
+export class OpencodeZenCatalog {
   private served: CatalogSnapshot | undefined
   private pending: Promise<CatalogSnapshot> | undefined
   private metadata: ModelMetadata | undefined
@@ -171,7 +173,7 @@ export class OpencodeGoCatalog {
     if (!snapshot.models.has(id) && snapshot === cached) snapshot = await this.snapshot(true)
     if (snapshot.unavailable.has(id)) {
       throw new LlmError(
-        `opencode-go model "${id}" is advertised but cannot be configured: ${snapshot.unavailable.get(id)}; refresh the model list to retry`,
+        `opencode-zen model "${id}" is advertised but cannot be configured: ${snapshot.unavailable.get(id)}; refresh the model list to retry`,
         'MODEL_METADATA_UNAVAILABLE',
       )
     }
@@ -180,10 +182,10 @@ export class OpencodeGoCatalog {
 }
 
 /** Explicit discovery always revalidates both sources, including during the runtime TTL. */
-export async function discoverCatalogModels(catalog: OpencodeGoCatalog): Promise<readonly LlmDiscoveredModel[]> {
+export async function discoverCatalogModels(catalog: OpencodeZenCatalog): Promise<readonly LlmDiscoveredModel[]> {
   const snapshot = await catalog.snapshot(true)
   if (!snapshot.live) {
-    throw new LlmError('llm-opencode-go: the live model listing is unreachable; try again later', 'DISCOVERY_FAILED')
+    throw new LlmError('llm-opencode-zen: the live model listing is unreachable; try again later', 'DISCOVERY_FAILED')
   }
   return describeCatalog(snapshot)
 }
@@ -198,8 +200,8 @@ function describeCatalog(snapshot: CatalogSnapshot): readonly LlmDiscoveredModel
 }
 
 /** Settings retain deprecated gateway entries regardless of picker visibility. */
-export async function discoverSettingsModels(catalog: OpencodeGoCatalog): Promise<readonly GoModel[]> {
+export async function discoverSettingsModels(catalog: OpencodeZenCatalog): Promise<readonly ZenModel[]> {
   const snapshot = await catalog.snapshot(true)
-  if (!snapshot.live) throw new LlmError('llm-opencode-go: the live model listing is unreachable; try again later', 'DISCOVERY_FAILED')
+  if (!snapshot.live) throw new LlmError('llm-opencode-zen: the live model listing is unreachable; try again later', 'DISCOVERY_FAILED')
   return sortModels(describeCatalog(snapshot).map(model => ({ ...model, ...snapshot.details.get(model.id) })))
 }

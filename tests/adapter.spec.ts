@@ -3,7 +3,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, MessageId, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { OpencodeGoAdapter } from '../src/adapter.ts'
+import { OpencodeZenAdapter } from '../src/adapter.ts'
 import { PROVIDER_ID } from '../src/catalog.ts'
 import { configOf } from './config-of.ts'
 import { closeMockGateways, fullLiveListing, listingBody, mockGateway, textEvents } from './mock-gateway.ts'
@@ -38,8 +38,8 @@ function requestOf(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   }
 }
 
-async function adapterFor(url: string, apiKey = 'test-key'): Promise<OpencodeGoAdapter> {
-  return new OpencodeGoAdapter({
+async function adapterFor(url: string, apiKey = 'test-key'): Promise<OpencodeZenAdapter> {
+  return new OpencodeZenAdapter({
     config: () => configOf(url),
     resolveApiKey: () => Promise.resolve(apiKey),
   })
@@ -50,7 +50,7 @@ afterEach(async () => {
   await closeMockGateways()
 })
 
-describe('OpencodeGoAdapter stream', () => {
+describe('OpencodeZenAdapter stream', () => {
   it.each([
     { prompt_tokens_details: { cached_tokens: 80 } },
     { prompt_cache_hit_tokens: 80 },
@@ -123,7 +123,12 @@ describe('OpencodeGoAdapter stream', () => {
     gateway.pushCompletions({ events: textEvents })
     const adapter = await adapterFor(gateway.url)
 
-    await drain(adapter.stream(requestOf({ reasoningEffort: ReasoningEffortId('off') })))
+    // kimi-k2.6, not the default deepseek model: the Zen catalog gives deepseek
+    // models `off: null` (off unsupported), while kimi-k2.6's toggle metadata
+    // grants off and its builtin compat keeps thinkingFormat: 'deepseek', which
+    // is the branch that turns off into an explicit disable instead of a
+    // reasoning_effort value.
+    await drain(adapter.stream(requestOf({ model: 'kimi-k2.6', reasoningEffort: ReasoningEffortId('off') })))
 
     expect(gateway.bodies[0]).toMatchObject({ thinking: { type: 'disabled' } })
     expect(gateway.bodies[0]).not.toHaveProperty('reasoning_effort')
@@ -163,7 +168,7 @@ describe('OpencodeGoAdapter stream', () => {
   it('fails the stream when events stall past the idle timeout', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     gateway.pushCompletions({ events: textEvents, delayMs: 1_000 })
-    const adapter = new OpencodeGoAdapter({
+    const adapter = new OpencodeZenAdapter({
       config: () => configOf(gateway.url, { streamIdleTimeoutMs: 100 }),
       resolveApiKey: () => Promise.resolve('test-key'),
     })
@@ -251,7 +256,7 @@ describe('OpencodeGoAdapter stream', () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     gateway.pushCompletions({ events: textEvents })
     const degraded: string[] = []
-    const adapter = new OpencodeGoAdapter({
+    const adapter = new OpencodeZenAdapter({
       config: () => configOf(gateway.url),
       resolveApiKey: () => Promise.resolve('test-key'),
       onReplayDegrade: (reason) => {
@@ -306,7 +311,7 @@ describe('OpencodeGoAdapter stream', () => {
 
   it('fails loud when no credential resolves', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const adapter = new OpencodeGoAdapter({
+    const adapter = new OpencodeZenAdapter({
       config: () => configOf(gateway.url),
       resolveApiKey: () => Promise.resolve(undefined),
     })
@@ -332,7 +337,7 @@ describe('OpencodeGoAdapter stream', () => {
 
   it('refuses image content when the attachment service stays unmounted', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const adapter = new OpencodeGoAdapter({
+    const adapter = new OpencodeZenAdapter({
       config: () => configOf(gateway.url),
       resolveApiKey: () => Promise.resolve('test-key'),
       imageAccess: {
@@ -379,13 +384,13 @@ describe('OpencodeGoAdapter stream', () => {
 
     await expect(adapter.resolveModel(PROVIDER_ID, 'absent'))
       .rejects.toMatchObject({ code: 'UNKNOWN_MODEL' })
-    expect(adapter.providerInfo(PROVIDER_ID)).toEqual({ id: PROVIDER_ID, name: 'OpenCode Go' })
+    expect(adapter.providerInfo(PROVIDER_ID)).toEqual({ id: PROVIDER_ID, name: 'OpenCode Zen' })
   })
 
   it('applies and removes capacities immediately without dropping the catalog cache', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     let modelLimits: Record<string, { contextWindow?: number; maxTokens?: number }> = {}
-    const adapter = new OpencodeGoAdapter({
+    const adapter = new OpencodeZenAdapter({
       config: () => configOf(gateway.url, { modelLimits }),
       resolveApiKey: () => Promise.resolve('test-key'),
     })

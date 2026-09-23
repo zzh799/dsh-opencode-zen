@@ -20,7 +20,7 @@ const MODEL_IMAGE_PATH = '/model/.dsh/attachments/objects/aa/object'
 
 /** Wait until the credential-backed route registration settles. */
 async function waitForRoute(ctx: Context): Promise<void> {
-  await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 }).toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+  await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 }).toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
 }
 
 class MappedFileSystem extends Service {
@@ -44,14 +44,14 @@ class StubAdapter extends LlmAdapter {
   }
 }
 
-describe('llm-opencode-go plugin mount', () => {
+describe('llm-opencode-zen plugin mount', () => {
   it('registers the route and answers model discovery from the live listing', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     apply(ctx, configOf(gateway.url))
 
-    const models = await ctx.llm.discoverModels('llm-opencode-go', { provider: 'opencode-go' })
+    const models = await ctx.llm.discoverModels('llm-opencode-zen', { provider: 'opencode-zen' })
 
     expect(models.map(model => model.id)).toContain('deepseek-v4.1-flash')
   })
@@ -66,15 +66,15 @@ describe('llm-opencode-go plugin mount', () => {
 
   })
 
-  it('refuses discovery for endpoints that are not OpenCode zen/go', async () => {
+  it('refuses discovery for endpoints that are not OpenCode zen', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    apply(ctx, configOf('https://opencode.ai/zen/go/v1'))
+    apply(ctx, configOf('https://opencode.ai/zen/v1'))
 
-    await expect(ctx.llm.discoverModels('llm-opencode-go', { baseURL: 'https://gateway.example/v1' }))
+    await expect(ctx.llm.discoverModels('llm-opencode-zen', { baseURL: 'https://gateway.example/v1' }))
       .rejects.toMatchObject({ code: 'DISCOVERY_UNSUPPORTED' })
     // A draft naming another provider with no endpoint at all is equally not ours.
-    await expect(ctx.llm.discoverModels('llm-opencode-go', { provider: 'someone-else' }))
+    await expect(ctx.llm.discoverModels('llm-opencode-zen', { provider: 'someone-else' }))
       .rejects.toMatchObject({ code: 'DISCOVERY_UNSUPPORTED' })
   })
 
@@ -83,13 +83,13 @@ describe('llm-opencode-go plugin mount', () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    ctx.llm.registerAdapter(['opencode-go'], new StubAdapter())
+    ctx.llm.registerAdapter(['opencode-zen'], new StubAdapter())
 
     // The conflicting registration is logged, not thrown, and discovery — whose
     // value does not depend on owning the route — still registers.
     apply(ctx, configOf(gateway.url))
 
-    const models = await ctx.llm.discoverModels('llm-opencode-go', { provider: 'opencode-go' })
+    const models = await ctx.llm.discoverModels('llm-opencode-zen', { provider: 'opencode-zen' })
     expect(models.map(model => model.id)).toContain('deepseek-v4.1-flash')
   })
 
@@ -104,7 +104,7 @@ describe('llm-opencode-go plugin mount', () => {
 
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'hi' }],
@@ -128,7 +128,7 @@ describe('llm-opencode-go plugin mount', () => {
 
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'hi' }],
@@ -154,7 +154,7 @@ describe('llm-opencode-go plugin mount', () => {
 
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [createUserMessage({
         content: [{ type: 'text', text: 'hi' }],
@@ -177,7 +177,7 @@ describe('llm-opencode-go plugin mount', () => {
     await ctx.plugin(LlmRuntime)
     apply(ctx, configOf(gateway.url))
 
-    const models = await ctx.llm.discoverModels('llm-opencode-go', { provider: 'opencode-go' })
+    const models = await ctx.llm.discoverModels('llm-opencode-zen', { provider: 'opencode-zen' })
     expect(models.find(model => model.id === 'mystery-model')?.name).toContain('metadata unavailable')
     expect(models.map(model => model.id)).toContain('deepseek-v4.1-flash')
   })
@@ -196,7 +196,7 @@ describe('llm-opencode-go plugin mount', () => {
 
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [
         createUserMessage({
@@ -209,7 +209,7 @@ describe('llm-opencode-go plugin mount', () => {
           content: [{ type: 'text', text: 'earlier answer' }],
           source: {
             kind: 'model',
-            provider: 'opencode-go',
+            provider: 'opencode-zen',
             model: 'deepseek-v4.1-flash',
             replayState: { kind: 'foreign-adapter' },
           },
@@ -228,7 +228,7 @@ describe('llm-opencode-go plugin mount', () => {
     await ctx.plugin(LlmRuntime)
     apply(ctx, configOf(gateway.url))
 
-    const models = await ctx.llm.discoverModels('llm-opencode-go', { baseURL: 'https://opencode.ai/zen/go/v1' })
+    const models = await ctx.llm.discoverModels('llm-opencode-zen', { baseURL: 'https://opencode.ai/zen/v1' })
 
     expect(models.map(model => model.id)).toContain('deepseek-v4.1-flash')
   })
@@ -321,7 +321,7 @@ describe('llm-opencode-go plugin mount', () => {
 
     const chunks: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [createUserMessage({
         content: [{ type: 'image', attachment: ref }],

@@ -1,16 +1,16 @@
 {
-  "name": "dsh-opencode-go",
-  "version": "0.1.9",
-  "description": "OpenCode Go model provider and settings UI for DeepSeek Harness",
+  "name": "dsh-opencode-zen",
+  "version": "0.2.0",
+  "description": "OpenCode Zen model provider and settings UI for DeepSeek Harness",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Duskriver/dsh-opencode-go.git"
+    "url": "git+https://github.com/zzh799/dsh-opencode-zen.git"
   },
-  "homepage": "https://github.com/Duskriver/dsh-opencode-go#readme",
+  "homepage": "https://github.com/zzh799/dsh-opencode-zen#readme",
   "bugs": {
-    "url": "https://github.com/Duskriver/dsh-opencode-go/issues"
+    "url": "https://github.com/zzh799/dsh-opencode-zen/issues"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
@@ -204,7 +204,7 @@
     "dsh-plugin",
     "dsh",
     "opencode",
-    "opencode-go",
+    "opencode-zen",
     "llm",
     "cordis"
   ],

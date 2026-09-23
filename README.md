@@ -1,10 +1,10 @@
-# dsh-opencode-go
+# dsh-opencode-zen
 
 [English](README.en.md)
 
-功能：让你在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 中完美使用 OpenCode Go 订阅模型，支持流式回复、工具调用和图片输入。
+功能：让你在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 中完美使用 OpenCode Zen 按量付费模型网关，支持流式回复、工具调用和图片输入。
 
-插件会自动添加 OpenCode Go 所需的会话请求头、读取网关模型目录，并显示订阅用量，无需给模型配置协议、模态、上下文长度、最大输出token
+插件会自动添加 OpenCode Zen 所需的会话请求头、读取网关模型目录，无需给模型配置协议、模态、上下文长度、最大输出token
 
 ## 功能说明
 
@@ -22,33 +22,31 @@
 ### 在 DSH 中安装（推荐）
 
 1. 打开 DSH 的 **插件** 页面，点击右上角 **添加插件**。
-2. 输入 `dsh-opencode-go`，点击 **安装**。
+2. 输入 `dsh-opencode-zen`，点击 **安装**。
 3. 安装成功后，如果出现 **立即启用**，点击即可。
 
-![在 DSH 插件页添加、安装并启用 dsh-opencode-go](docs/assets/install-via-dsh.gif)
-
-然后打开 **设置 → OpenCode Go**，填入 API Key 并保存，即可在会话中选择 OpenCode Go 模型。
+然后打开 **设置 → OpenCode Zen**，填入 API Key 并保存，即可在会话中选择 OpenCode Zen 模型。
 
 若当前 DSH 没有「添加插件」入口，可使用下面的命令行方式。
 
 ### 命令行安装（备选）
 
 ```sh
-dsh plugin --profile web add dsh-opencode-go@0.1.9
+dsh plugin --profile web add dsh-opencode-zen@0.2.0
 ```
 
 安装后启动或重启 `dsh web`，然后：
 
-1. 打开 **设置 → OpenCode Go**。
-2. 填入 OpenCode Go API Key 并保存。
-3. 在会话的模型选择器中选择 OpenCode Go 模型。
+1. 打开 **设置 → OpenCode Zen**。
+2. 填入 OpenCode Zen API Key 并保存。
+3. 在会话的模型选择器中选择 OpenCode Zen 模型。
 
 ### 无头模式
 
 安装到 Headless profile：
 
 ```sh
-dsh plugin --profile headless add dsh-opencode-go@0.1.9
+dsh plugin --profile headless add dsh-opencode-zen@0.2.0
 ```
 
 将以下内容保存为 `headless.patch.yml`，选择默认模型：
@@ -56,7 +54,7 @@ dsh plugin --profile headless add dsh-opencode-go@0.1.9
 ```yaml
 - id: agent-default-model
   config:
-    provider: opencode-go
+    provider: opencode-zen
     model: deepseek-v4.1-flash
 ```
 
@@ -75,7 +73,7 @@ dsh --profile headless --patch ./headless.patch.yml "你好"
 ```sh
 npm ci --legacy-peer-deps
 npm pack
-dsh plugin --profile web add ./dsh-opencode-go-0.1.9.tgz
+dsh plugin --profile web add ./dsh-opencode-zen-0.2.0.tgz
 ```
 
 开发依赖包含多代 DSH 的真实测试包，安装时需要 `--legacy-peer-deps`。Headless 用户将 `web` 换成 `headless`。
@@ -85,24 +83,20 @@ dsh plugin --profile web add ./dsh-opencode-go-0.1.9.tgz
 更新 Web profile 中的插件到 npm 最新版本：
 
 ```sh
-dsh plugin --profile web update dsh-opencode-go --latest
+dsh plugin --profile web update dsh-opencode-zen --latest
 ```
 
 完成后重启 `dsh web` 并刷新浏览器。Headless 用户将 `web` 换成 `headless`；如果两个 profile 都安装了插件，需要分别升级。
 
-## 订阅用量显示
-
-![OpenCode Go usage display](image.png)
-
 ## 常见问题
 
-### 提示 `opencode-go` 路由已被占用
+### 提示 `opencode-zen` 路由已被占用
 
-同一 profile 中只能有一个适配器提供 `opencode-go` 路由。如果已经通过其他插件或通用 pi-ai 配置接入 OpenCode Go，请先停用那一项配置。其他提供方可以继续使用。
+同一 profile 中只能有一个适配器提供 `opencode-zen` 路由。如果已经通过其他插件或通用 pi-ai 配置接入 OpenCode Zen，请先停用那一项配置。其他提供方可以继续使用。
 
 ### 没有出现预期的模型
 
-先确认插件已启用且 API Key 已配置，再刷新设置页中的模型列表。插件每次读取模型列表都会请求网关 `/models`，并同步 [models.dev 的 OpenCode Go 配置](https://models.dev/api.json)。模型的协议、上下文长度、输出上限和图片能力来自在线配置，新模型无需等待本插件或 pi-ai 发布新版本。
+先确认插件已启用且 API Key 已配置，再刷新设置页中的模型列表。插件每次读取模型列表都会请求网关 `/models`，并同步 [models.dev 的 OpenCode Zen 配置](https://models.dev/api.json)。模型的协议、上下文长度、输出上限和图片能力来自在线配置，新模型无需等待本插件或 pi-ai 发布新版本。
 
 网关和在线配置已收录、且使用 Anthropic Messages、OpenAI Chat Completions 或 OpenAI Responses 协议的新模型，在下次读取或刷新列表时即可使用。刷新会绕过已有会话的目录缓存；直接请求尚未缓存的新模型也会立即重新同步。设置页显示完整模型列表。
 
@@ -117,9 +111,9 @@ dsh plugin --profile web update dsh-opencode-go --latest
 从对应 profile 移除插件，再重启应用：
 
 ```sh
-dsh plugin --profile web remove dsh-opencode-go
+dsh plugin --profile web remove dsh-opencode-zen
 # 或
-dsh plugin --profile headless remove dsh-opencode-go
+dsh plugin --profile headless remove dsh-opencode-zen
 ```
 
 ## 反馈

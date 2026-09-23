@@ -1,9 +1,9 @@
 /**
- * The OpenCode Go settings section. It leads with the one value a user has to
+ * The OpenCode Zen settings section. It leads with the one value a user has to
  * supply — the API key, stored write-only through the credentials domain — and
  * the models the gateway currently serves, then keeps the credential
  * reference, the endpoint, and the adapter tuning fields in the
- * `llm-opencode-go` namespace behind a collapsed disclosure.
+ * `llm-opencode-zen` namespace behind a collapsed disclosure.
  */
 
 import { useEffect, useState } from 'react'
@@ -11,9 +11,9 @@ import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import * as primitives from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  OpencodeGoModels,
-  OpencodeGoSectionFace,
-  OpencodeGoSectionState,
+  OpencodeZenModels,
+  OpencodeZenSectionFace,
+  OpencodeZenSectionState,
 } from './section-controller.ts'
 import { ModelEditor } from './ModelEditor.tsx'
 import type { en } from './locales.ts'
@@ -24,25 +24,25 @@ const ChevronDown = (primitives as typeof primitives & {
   IconChevronDownOutlineRegular?: typeof primitives.IconChevronDownOutline14
 }).IconChevronDownOutlineRegular ?? primitives.IconChevronDownOutline14
 
-export type { OpencodeGoSectionState } from './section-controller.ts'
+export type { OpencodeZenSectionState } from './section-controller.ts'
 
 /** Section copy lookup, including the optional `{name}` template params. */
 type SectionTranslate = (key: keyof typeof en, params?: Record<string, unknown>) => string
 
-/** Injected dependencies of {@link OpencodeGoSection} (slot `inject`). */
-export interface OpencodeGoSectionInjected extends OpencodeGoSectionFace {
+/** Injected dependencies of {@link OpencodeZenSection} (slot `inject`). */
+export interface OpencodeZenSectionInjected extends OpencodeZenSectionFace {
   /** Section copy. */
   t: SectionTranslate
 }
 
 /** Props delivered by the slot outlet: the inject face spread flat. */
-export type OpencodeGoSectionProps = Partial<InjectFace<OpencodeGoSectionInjected>>
+export type OpencodeZenSectionProps = Partial<InjectFace<OpencodeZenSectionInjected>>
 
 interface ValueFieldProps {
   id: string
   label: string
   hint: string
-  field: OpencodeGoSectionState['baseURL']
+  field: OpencodeZenSectionState['baseURL']
   invalidLabel: string
   overriddenLabel: string
   resetLabel: string
@@ -103,7 +103,7 @@ function ValueField(props: ValueFieldProps) {
  *   body once the capacity table can show the complete model list.
  */
 function ModelsBody({ models, t }: {
-  models: OpencodeGoModels
+  models: OpencodeZenModels
   t: SectionTranslate
 }) {
   if (models.status === 'failed') {
@@ -120,18 +120,18 @@ function ModelsBody({ models, t }: {
 }
 
 /**
- * Render the OpenCode Go settings page.
+ * Render the OpenCode Zen settings page.
  * @param props - locale copy, the page snapshot, and its form actions.
  * @returns the section.
  */
-export function OpencodeGoSection(props: OpencodeGoSectionProps) {
-  const { useOpencodeGo, edit, resetField, save, discard, loadModels, setEnabled, setShowDeprecatedModels, t } = props
-  if (useOpencodeGo === undefined || edit === undefined || resetField === undefined
+export function OpencodeZenSection(props: OpencodeZenSectionProps) {
+  const { useOpencodeZen, edit, resetField, save, discard, loadModels, setEnabled, setShowDeprecatedModels, t } = props
+  if (useOpencodeZen === undefined || edit === undefined || resetField === undefined
     || save === undefined || discard === undefined || loadModels === undefined
     || setEnabled === undefined || setShowDeprecatedModels === undefined || t === undefined) return null
   return (
     <Loaded
-      state={useOpencodeGo(snapshot => snapshot)}
+      state={useOpencodeZen(snapshot => snapshot)}
       t={t}
       edit={edit}
       resetField={resetField}
@@ -146,7 +146,7 @@ export function OpencodeGoSection(props: OpencodeGoSectionProps) {
 
 /** The page once every injected seat is present. */
 function Loaded(props: {
-  state: OpencodeGoSectionState
+  state: OpencodeZenSectionState
   t: SectionTranslate
   edit: (field: string, text: string) => void
   resetField: (field: string) => void
@@ -186,7 +186,7 @@ function Loaded(props: {
           type="button"
           className={css.advancedTrigger}
           aria-expanded={advanced}
-          aria-controls="opencode-go-advanced"
+          aria-controls="opencode-zen-advanced"
           onClick={() => { setAdvanced(!advanced) }}
         >
           <ChevronDown className={advanced ? css.chevronOpen : css.chevron} />
@@ -197,10 +197,10 @@ function Loaded(props: {
       <div className={advanced ? css.field : undefined}>
         {advanced
           ? (
-            <div id="opencode-go-advanced" className={css.advanced}>
+            <div id="opencode-zen-advanced" className={css.advanced}>
               <p className={css.hint}>{t('advancedHint')}</p>
               <ValueField
-                id="opencode-go-api-key-env"
+                id="opencode-zen-api-key-env"
                 label={t('apiKeyEnvLabel')}
                 hint={t('apiKeyEnvHint')}
                 field={state.apiKeyEnv}
@@ -209,7 +209,7 @@ function Loaded(props: {
                 onReset={() => { props.resetField('apiKeyEnv') }}
               />
               <ValueField
-                id="opencode-go-base-url"
+                id="opencode-zen-base-url"
                 label={t('baseURLLabel')}
                 hint={t('baseURLHint')}
                 field={state.baseURL}
@@ -218,7 +218,7 @@ function Loaded(props: {
                 onReset={() => { props.resetField('baseURL') }}
               />
               <ValueField
-                id="opencode-go-refresh-minutes"
+                id="opencode-zen-refresh-minutes"
                 label={t('refreshMinutesLabel')}
                 hint={t('refreshMinutesHint')}
                 field={state.refreshMinutes}
@@ -228,7 +228,7 @@ function Loaded(props: {
                 onReset={() => { props.resetField('refreshMinutes') }}
               />
               <ValueField
-                id="opencode-go-stream-idle"
+                id="opencode-zen-stream-idle"
                 label={t('streamIdleTimeoutMsLabel')}
                 hint={t('streamIdleTimeoutMsHint')}
                 field={state.streamIdleTimeoutMs}
@@ -238,7 +238,7 @@ function Loaded(props: {
                 onReset={() => { props.resetField('streamIdleTimeoutMs') }}
               />
               <ValueField
-                id="opencode-go-max-request-image-bytes"
+                id="opencode-zen-max-request-image-bytes"
                 label={t('maxRequestImageBytesLabel')}
                 hint={t('maxRequestImageBytesHint')}
                 field={state.maxRequestImageBytes}
@@ -248,7 +248,7 @@ function Loaded(props: {
                 onReset={() => { props.resetField('maxRequestImageBytes') }}
               />
               <ValueField
-                id="opencode-go-image-pixel-budget"
+                id="opencode-zen-image-pixel-budget"
                 label={t('requestImagePixelBudgetLabel')}
                 hint={t('requestImagePixelBudgetHint')}
                 field={state.requestImagePixelBudget}
@@ -258,7 +258,7 @@ function Loaded(props: {
                 onReset={() => { props.resetField('requestImagePixelBudget') }}
               />
               <ValueField
-                id="opencode-go-image-max-bytes"
+                id="opencode-zen-image-max-bytes"
                 label={t('requestImageMaxBytesLabel')}
                 hint={t('requestImageMaxBytesHint')}
                 field={state.requestImageMaxBytes}
@@ -295,13 +295,13 @@ function Loaded(props: {
           </span>
         </summary>
         <input
-          id="opencode-go-key"
+          id="opencode-zen-key"
           aria-label={t('keyLabel')}
           name="api-key"
           className={css.input}
           type="password"
           autoComplete="off"
-          aria-describedby="opencode-go-key-hint"
+          aria-describedby="opencode-zen-key-hint"
           value={state.apiKey.text}
           // The credentials domain accepts a key even when the settings document
           // itself is read-only; its own writability is what disables this
@@ -309,7 +309,7 @@ function Loaded(props: {
           disabled={!state.apiKeyWritable}
           onChange={(event) => { props.edit('apiKey', event.target.value) }}
         />
-        <p id="opencode-go-key-hint" className={css.hint}>{state.apiKeyWritable ? t('keyHint') : t('keyNotWritable')}</p>
+        <p id="opencode-zen-key-hint" className={css.hint}>{state.apiKeyWritable ? t('keyHint') : t('keyNotWritable')}</p>
       </details>
       <div className={css.field}>
         <div className={css.head}>

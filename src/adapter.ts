@@ -1,5 +1,5 @@
 /**
- * The OpenCode Go adapter: one route, one catalog, per-request routing header.
+ * The OpenCode Zen adapter: one route, one catalog, per-request routing header.
  *
  * Every request to the gateway carries two Harness-owned headers: the
  * attribution User-Agent (`deepseek-harness/<version>`), which pi-ai's client
@@ -19,7 +19,7 @@
  * durable attachment service, and every other model refuses image content
  * before any provider I/O.
  *
- * @module dsh-llm-opencode-go/adapter
+ * @module dsh-opencode-zen/adapter
  */
 
 import { randomUUID } from 'node:crypto'
@@ -43,12 +43,12 @@ import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attac
 import { toPiContext, toStreamChunks } from './conversion/index.ts'
 import type { PiImageRequestContext } from './conversion/index.ts'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import { PROVIDER_ID, DISPLAY_NAME, OpencodeGoCatalog } from './catalog.ts'
+import { PROVIDER_ID, DISPLAY_NAME, OpencodeZenCatalog } from './catalog.ts'
 import { assertBaseURL } from './config.ts'
-import type { OpencodeGoConfig, OpencodeGoModelLimits } from './config.ts'
+import type { OpencodeZenConfig, OpencodeZenModelLimits } from './config.ts'
 
 /** Apply one request's capacities without changing the shared catalog or its fallbacks. */
-function withModelLimit(model: Model<Api>, limits: OpencodeGoModelLimits): Model<Api> {
+function withModelLimit(model: Model<Api>, limits: OpencodeZenModelLimits): Model<Api> {
   const limit = limits[model.id]
   if (limit == null) return model
   return {
@@ -63,28 +63,28 @@ function withModelLimit(model: Model<Api>, limits: OpencodeGoModelLimits): Model
  * (context-dependent); the config-dependent policy numbers are merged per
  * request from the current configuration.
  */
-export interface OpencodeGoImageAccess {
+export interface OpencodeZenImageAccess {
   /** Resolve the optional durable attachment service at request time. */
   resolveAttachments: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */
   resolveImageAccess: (attachments: AttachmentStore, ref: ImageAttachmentRef) => ImageAttachmentAccess | undefined
 }
 
-/** Constructor inputs for {@link OpencodeGoAdapter}. */
-export interface OpencodeGoAdapterOptions {
+/** Constructor inputs for {@link OpencodeZenAdapter}. */
+export interface OpencodeZenAdapterOptions {
   /**
    * The current configuration, re-read at every operation: a settings write
    * reaches the next request without a restart, and one operation never mixes
    * two configuration generations.
    */
-  config: () => OpencodeGoConfig
+  config: () => OpencodeZenConfig
   /** Resolve the route's credential per call; missing must fail loud. */
   resolveApiKey: () => Promise<string | undefined>
   /**
    * Image input machinery; absent refuses image content, which is the posture
    * for direct construction without a durable attachment service behind it.
    */
-  imageAccess?: OpencodeGoImageAccess
+  imageAccess?: OpencodeZenImageAccess
   /** Observe the catalog falling back to the curated table. */
   onFallback?: (detail: { url: string; error: unknown; kept: number }) => void
   /** Observe live ids the curated table cannot route. */
@@ -108,16 +108,16 @@ function opencodeSessionValue(sessionId: string | undefined): string {
  * so a refresh between two requests never mixes model generations inside one
  * call.
  */
-export class OpencodeGoAdapter extends LlmAdapter {
+export class OpencodeZenAdapter extends LlmAdapter {
   /**
    * One catalog instance per endpoint/refresh pair. A settings write that
    * changes either gets a fresh resolver (and a fresh live-listing fetch) on
    * the next operation; an unchanged configuration keeps its cached snapshot
    * for the whole refresh interval.
    */
-  private catalogCache: { key: string; catalog: OpencodeGoCatalog } | undefined
+  private catalogCache: { key: string; catalog: OpencodeZenCatalog } | undefined
 
-  constructor(private readonly options: OpencodeGoAdapterOptions) {
+  constructor(private readonly options: OpencodeZenAdapterOptions) {
     super()
   }
 
@@ -128,12 +128,12 @@ export class OpencodeGoAdapter extends LlmAdapter {
    * @param config - the endpoint and refresh interval for the raw catalog.
    * @returns the resolver caching catalog values, independent of deployment limits.
    */
-  catalogOf(config: OpencodeGoConfig): OpencodeGoCatalog {
+  catalogOf(config: OpencodeZenConfig): OpencodeZenCatalog {
     const key = `${config.baseURL}|${String(config.refreshMinutes)}`
     if (this.catalogCache?.key !== key) {
       this.catalogCache = {
         key,
-        catalog: new OpencodeGoCatalog(
+        catalog: new OpencodeZenCatalog(
           assertBaseURL(config.baseURL),
           config.refreshMinutes * 60_000,
           /* v8 ignore next -- the plugin always passes both observers; the defaults exist for direct construction */
@@ -174,7 +174,7 @@ export class OpencodeGoAdapter extends LlmAdapter {
     const snapshot = await this.catalogOf(config).forModel(model)
     const resolved = snapshot.models.get(model)
     if (resolved === undefined) {
-      throw new LlmError(`opencode-go has no model "${model}"`, 'UNKNOWN_MODEL')
+      throw new LlmError(`opencode-zen has no model "${model}"`, 'UNKNOWN_MODEL')
     }
     return this.modelInfo(withModelLimit(resolved, config.modelLimits))
   }
@@ -212,27 +212,27 @@ export class OpencodeGoAdapter extends LlmAdapter {
     const supported = getSupportedThinkingLevels(model)
     if (supported.some(level => level === effort)) return effort as ModelThinkingLevel
     throw new LlmError(
-      `opencode-go model "${model.id}" does not support reasoning effort "${effort}"`,
+      `opencode-zen model "${model.id}" does not support reasoning effort "${effort}"`,
       'UNSUPPORTED_REASONING_EFFORT',
     )
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     if (options.stop !== undefined) {
-      throw new LlmError('llm-opencode-go does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
+      throw new LlmError('llm-opencode-zen does not support GenerateOptions.stop', 'UNSUPPORTED_OPTION')
     }
     const config = this.options.config()
     const snapshot = await this.catalogOf(config).forModel(options.model)
     const advertised = snapshot.models.get(options.model)
     if (advertised === undefined) {
-      throw new LlmError(`opencode-go has no model "${options.model}"`, 'UNKNOWN_MODEL')
+      throw new LlmError(`opencode-zen has no model "${options.model}"`, 'UNKNOWN_MODEL')
     }
     const model = withModelLimit(advertised, config.modelLimits)
     const outputLimit = config.modelLimits[model.id]?.maxTokens
     const maxTokens = outputLimit == null ? options.maxTokens : Math.min(options.maxTokens ?? outputLimit, outputLimit)
     const apiKey = await this.options.resolveApiKey()
     if (apiKey === undefined || apiKey.length === 0) {
-      throw new LlmError('llm-opencode-go: no credential resolved for the route', 'MISSING_CREDENTIAL')
+      throw new LlmError('llm-opencode-zen: no credential resolved for the route', 'MISSING_CREDENTIAL')
     }
     const reasoning = this.resolveReasoningLevel(model, options.reasoningEffort)
 
@@ -250,14 +250,14 @@ export class OpencodeGoAdapter extends LlmAdapter {
       // conversion failure as aborted, like every other conversion fault.
       const containsImage = options.messages.some(message => contentHasImage(message.content))
       if (containsImage && !model.input.includes('image')) {
-        throw new LlmError(`opencode-go model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
+        throw new LlmError(`opencode-zen model "${model.id}" does not support image input`, 'UNSUPPORTED_CONTENT')
       }
       let imageRequest: PiImageRequestContext | undefined
       if (containsImage) {
         const access = this.options.imageAccess
         const store = access?.resolveAttachments()
         if (access === undefined || store === undefined) {
-          throw new LlmError('llm-opencode-go image input requires the durable attachment service', 'UNSUPPORTED_CONTENT')
+          throw new LlmError('llm-opencode-zen image input requires the durable attachment service', 'UNSUPPORTED_CONTENT')
         }
         imageRequest = {
           attachments: store,
@@ -299,7 +299,7 @@ export class OpencodeGoAdapter extends LlmAdapter {
         while (true) {
           const result = await watchdog.next(iterator)
           if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-            throw new LlmError('opencode-go stream idle timeout', 'TIMEOUT')
+            throw new LlmError('opencode-zen stream idle timeout', 'TIMEOUT')
           }
           if (result.done) {
             exhausted = true
@@ -309,7 +309,7 @@ export class OpencodeGoAdapter extends LlmAdapter {
         }
       } finally {
         if (!exhausted) {
-          consumer.abort('opencode-go stream consumer stopped')
+          consumer.abort('opencode-zen stream consumer stopped')
           try {
             await iterator.return(undefined)
           } catch (_abortedSdkTeardown) {
@@ -319,10 +319,10 @@ export class OpencodeGoAdapter extends LlmAdapter {
       }
     } catch (error: unknown) {
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {
-        throw new LlmError('opencode-go stream idle timeout', 'TIMEOUT', { cause: error })
+        throw new LlmError('opencode-zen stream idle timeout', 'TIMEOUT', { cause: error })
       }
       if (options.signal?.aborted) {
-        throw new LlmError('opencode-go request aborted by caller', 'ABORTED', { cause: error })
+        throw new LlmError('opencode-zen request aborted by caller', 'ABORTED', { cause: error })
       }
       throw error
     }

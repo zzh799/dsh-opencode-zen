@@ -1,5 +1,5 @@
 /**
- * The OpenCode Go settings page's staged form over the `llm-opencode-go`
+ * The OpenCode Zen settings page's staged form over the `llm-opencode-zen`
  * settings namespace, plus the gateway model listing the page reports.
  *
  * The key is the one control that does not live in the section: its literal
@@ -13,7 +13,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.remote merge into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { GoModel } from '../models-contract.ts'
+import type { ZenModel } from '../models-contract.ts'
 import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope, SettingsScopeSnapshot } from './settings.ts'
@@ -28,8 +28,8 @@ import {
   type FormShell,
 } from './staged-form.ts'
 
-/** Namespace of the OpenCode Go adapter. Spelled here rather than imported: a client package must not depend on a Host package. */
-export const OPENCODE_GO_NS = 'llm-opencode-go'
+/** Namespace of the OpenCode Zen adapter. Spelled here rather than imported: a client package must not depend on a Host package. */
+export const OPENCODE_ZEN_NS = 'llm-opencode-zen'
 
 /** Credential reference the provider resolves when the section names none. */
 const DEFAULT_API_KEY_REF = 'OPENCODE_API_KEY'
@@ -39,13 +39,13 @@ const API_KEY_FIELD = 'apiKey'
 
 /**
  * Route the Host's model discovery answers for, spelled here for the same
- * reason as {@link OPENCODE_GO_NS}: a client package must not depend on a Host
+ * reason as {@link OPENCODE_ZEN_NS}: a client package must not depend on a Host
  * package.
  */
-const OPENCODE_GO_PROVIDER = 'opencode-go'
+const OPENCODE_ZEN_PROVIDER = 'opencode-zen'
 
 /** The adapter fields this page edits. */
-export interface OpencodeGoSettings {
+export interface OpencodeZenSettings {
   /** Whether the adapter serves its route; false withdraws it from every picker. */
   enabled?: boolean
   /** Include gateway-served deprecated models in conversation pickers. */
@@ -65,16 +65,16 @@ export interface OpencodeGoSettings {
   /** Raw encoded-byte target for one request image. */
   requestImageMaxBytes?: number
   /** Per-model capacity overrides, keyed by the gateway model id. */
-  modelLimits?: OpencodeGoModelLimits
+  modelLimits?: OpencodeZenModelLimits
 }
 
 /** The two capacity values the settings table can override. */
-export interface OpencodeGoModelLimit {
+export interface OpencodeZenModelLimit {
   contextWindow?: number | null
   maxTokens?: number | null
 }
 
-export type OpencodeGoModelLimits = Record<string, OpencodeGoModelLimit | null>
+export type OpencodeZenModelLimits = Record<string, OpencodeZenModelLimit | null>
 
 /** What the credentials domain last reported, and for which reference. */
 interface CredentialState {
@@ -87,7 +87,7 @@ interface CredentialState {
 }
 
 /** The gateway's model listing as the page reports it. */
-export type OpencodeGoModels =
+export type OpencodeZenModels =
   /** Not asked for yet; the page asks once it mounts. */
   | { readonly status: 'idle' }
   /** A listing request is outstanding. */
@@ -100,13 +100,13 @@ export type OpencodeGoModels =
     readonly status: 'ready'
     readonly count: number
     readonly preview: readonly string[]
-    readonly entries: readonly GoModel[]
+    readonly entries: readonly ZenModel[]
   }
   /** The listing could not be read; `message` is the Host's own diagnostic. */
   | { readonly status: 'failed'; readonly message: string }
 
 /** What the settings page renders. */
-export interface OpencodeGoSectionState extends FormShell {
+export interface OpencodeZenSectionState extends FormShell {
   /**
    * Whether the adapter currently serves its route. Resolved from the section
    * rather than staged: the switch writes on the click that flips it, because
@@ -137,18 +137,18 @@ export interface OpencodeGoSectionState extends FormShell {
   /** Whether the credentials domain accepts a write for it; false disables the control. */
   apiKeyWritable: boolean
   /** The gateway's current model listing. */
-  models: OpencodeGoModels
+  models: OpencodeZenModels
   /** The staged JSON field backing the capacity table. */
   modelLimits: FieldState
   /** The parsed overrides currently shown by the capacity table. */
-  modelLimitDraft: OpencodeGoModelLimits
+  modelLimitDraft: OpencodeZenModelLimits
 }
 
 /** The registration-side face the page's slot entry injects. */
-export interface OpencodeGoSectionFace extends FormActions {
+export interface OpencodeZenSectionFace extends FormActions {
   hooks: {
-    /** Page snapshot bound by the UI renderer as useOpencodeGo. */
-    opencodeGo: SnapshotStore<OpencodeGoSectionState>
+    /** Page snapshot bound by the UI renderer as useOpencodeZen. */
+    opencodeZen: SnapshotStore<OpencodeZenSectionState>
   }
   /** Read the gateway's model listing, now or again after a failure. */
   loadModels: () => void
@@ -160,28 +160,28 @@ export interface OpencodeGoSectionFace extends FormActions {
   setShowDeprecatedModels: (next: boolean) => void
 }
 
-/** Bridges the `llm-opencode-go` scope and the credentials domain onto the page. */
-export class OpencodeGoSectionController {
+/** Bridges the `llm-opencode-zen` scope and the credentials domain onto the page. */
+export class OpencodeZenSectionController {
   private readonly form: StagedForm
-  private readonly store: SnapshotStore<OpencodeGoSectionState>
+  private readonly store: SnapshotStore<OpencodeZenSectionState>
   private credential: CredentialState = { ref: '', configured: false, writable: true }
-  private models: OpencodeGoModels = { status: 'idle' }
+  private models: OpencodeZenModels = { status: 'idle' }
   private modelsRequest = 0
   private pickerSaving = false
   private pickerFailed = false
-  private face: OpencodeGoSectionFace | undefined
+  private face: OpencodeZenSectionFace | undefined
   private readonly unsubscribe: () => void
 
   /**
-   * @param scope - the bound settings scope for the `llm-opencode-go` namespace.
+   * @param scope - the bound settings scope for the `llm-opencode-zen` namespace.
    * @param ctx - the page plugin's context, whose `remote.credentials` namespace
    *   answers for the credential the section references.
    */
   constructor(
-    private readonly scope: SettingsScope<OpencodeGoSettings>,
+    private readonly scope: SettingsScope<OpencodeZenSettings>,
     private readonly ctx: ClientContext,
-    private readonly readModels: () => Promise<RemoteResult<readonly GoModel[]>> = () =>
-      ctx.remote.llm.discoverModels(OPENCODE_GO_NS, { provider: OPENCODE_GO_PROVIDER }),
+    private readonly readModels: () => Promise<RemoteResult<readonly ZenModel[]>> = () =>
+      ctx.remote.llm.discoverModels(OPENCODE_ZEN_NS, { provider: OPENCODE_ZEN_PROVIDER }),
   ) {
     this.form = new StagedForm(
       scope as SettingsScope<Record<string, unknown>>,
@@ -212,7 +212,7 @@ export class OpencodeGoSectionController {
     this.form.dispose()
   }
 
-  private projection(): OpencodeGoSectionState {
+  private projection(): OpencodeZenSectionState {
     return {
       ...this.form.shell(),
       enabled: this.enabled(),
@@ -240,7 +240,7 @@ export class OpencodeGoSectionController {
    * wins while it is valid; malformed text falls back to the last accepted
    * settings value so the table never renders phantom rows.
    */
-  private limitDraft(): OpencodeGoModelLimits {
+  private limitDraft(): OpencodeZenModelLimits {
     const staged = this.form.field('modelLimits')
     if (staged.invalid) return modelLimitsOf(this.scope.getSnapshot().value?.modelLimits)
     if (staged.overridden || this.form.shell().dirty) {
@@ -376,9 +376,9 @@ export class OpencodeGoSectionController {
    * is what changes, and the renderer binds the same callbacks across renders.
    * @returns the page snapshot and its form actions.
    */
-  inject(): OpencodeGoSectionFace {
+  inject(): OpencodeZenSectionFace {
     this.face ??= {
-      hooks: { opencodeGo: this.store },
+      hooks: { opencodeZen: this.store },
       loadModels: () => { this.loadModels() },
       setEnabled: (next) => { this.setEnabled(next) },
       setShowDeprecatedModels: (next) => { void this.setShowDeprecatedModels(next) },
@@ -405,14 +405,14 @@ export class OpencodeGoSectionController {
  * Read a stored override map without trusting its hand-editable shape. Only
  * positive safe integers and explicit catalog resets are accepted by the table.
  */
-function modelLimitsOf(value: unknown): OpencodeGoModelLimits {
+function modelLimitsOf(value: unknown): OpencodeZenModelLimits {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
-  const limits: OpencodeGoModelLimits = {}
+  const limits: OpencodeZenModelLimits = {}
   for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
     if (entry === null) { limits[id] = null; continue }
     if (typeof entry !== 'object' || Array.isArray(entry)) continue
     const fields = entry as Record<string, unknown>
-    const limit: OpencodeGoModelLimit = {}
+    const limit: OpencodeZenModelLimit = {}
     if (fields.contextWindow === null) limit.contextWindow = null
     if (fields.maxTokens === null) limit.maxTokens = null
     if (typeof fields.contextWindow === 'number' && Number.isSafeInteger(fields.contextWindow) && fields.contextWindow > 0) {
@@ -431,7 +431,7 @@ function modelLimitsOf(value: unknown): OpencodeGoModelLimits {
  * @param snapshot - the current scope snapshot.
  * @returns the reference to address.
  */
-function refOf(snapshot: SettingsScopeSnapshot<OpencodeGoSettings>): string {
+function refOf(snapshot: SettingsScopeSnapshot<OpencodeZenSettings>): string {
   const declared = snapshot.value?.apiKeyEnv
   return declared !== undefined && declared.length > 0 ? declared : DEFAULT_API_KEY_REF
 }

@@ -43,7 +43,7 @@ export const textEvents = [
 ]
 
 /**
- * OpenCode Go gateway stand-in: `GET /models` answers the configured listing,
+ * OpenCode Zen gateway stand-in: `GET /models` answers the configured listing,
  * `POST /chat/completions` replays scripted SSE behaviors in order.
  */
 export async function mockGateway(modelListing: {
@@ -140,7 +140,9 @@ export async function mockGateway(modelListing: {
 
 /** Every curated model id a listing must carry for the full table to serve. */
 export function fullLiveListing(): string[] {
-  return ['deepseek-v4-flash', 'deepseek-v4.1-flash', 'kimi-k3', 'minimax-m3']
+  // kimi-k2.6 included so the off-effort wire test has a model whose established
+  // deepseek-thinking wire quirk (from its pi-ai builtin) is actually reachable.
+  return ['deepseek-v4-flash', 'deepseek-v4.1-flash', 'kimi-k3', 'kimi-k2.6', 'minimax-m3']
 }
 
 /** The listing shape the gateway answers: an OpenAI `data` array of id rows. */

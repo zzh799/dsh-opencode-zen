@@ -3,10 +3,10 @@ import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { OpencodeGoAdapter } from '../src/adapter.ts'
+import { OpencodeZenAdapter } from '../src/adapter.ts'
 import { readModelMetadata } from '../src/model-metadata.ts'
 import { configOf } from './config-of.ts'
-import { OpencodeGoCatalog, discoverCatalogModels } from '../src/catalog.ts'
+import { OpencodeZenCatalog, discoverCatalogModels } from '../src/catalog.ts'
 import { closeMockGateways, listingBody, mockGateway, textEvents } from './mock-gateway.ts'
 import { metadataDocument, modelMetadata, MODELS_METADATA_URL } from './support/model-metadata.ts'
 
@@ -24,13 +24,13 @@ describe('runtime model metadata', () => {
       [id]: modelMetadata({ provider: { npm: '@ai-sdk/anthropic' }, reasoning_options: [] }),
     })))
     const gateway = await mockGateway({ status: 200, body: listingBody([id]) })
-    const adapter = new OpencodeGoAdapter({ config: () => configOf(gateway.url), resolveApiKey: async () => 'test-key' })
+    const adapter = new OpencodeZenAdapter({ config: () => configOf(gateway.url), resolveApiKey: async () => 'test-key' })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    ctx.llm.registerAdapter(['opencode-go'], adapter)
+    ctx.llm.registerAdapter(['opencode-zen'], adapter)
     try {
-      const models = await ctx.llm.listModels('opencode-go')
-      const resolved = await Promise.all(models.map(model => ctx.llm.resolveModelInfo('opencode-go', model.id)))
+      const models = await ctx.llm.listModels('opencode-zen')
+      const resolved = await Promise.all(models.map(model => ctx.llm.resolveModelInfo('opencode-zen', model.id)))
       expect(resolved).toEqual([expect.objectContaining({ id })])
       expect(resolved[0]).not.toHaveProperty('reasoning')
       expect((await adapter.catalogOf(configOf(gateway.url)).snapshot()).models.get(id)?.reasoning).toBe(true)
@@ -45,29 +45,29 @@ describe('runtime model metadata', () => {
     })))
     const gateway = await mockGateway({ status: 200, body: listingBody(['ready', 'not-ready']) })
     const config = configOf(gateway.url)
-    const adapter = new OpencodeGoAdapter({ config: () => config, resolveApiKey: async () => 'test-key' })
+    const adapter = new OpencodeZenAdapter({ config: () => config, resolveApiKey: async () => 'test-key' })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    ctx.llm.registerAdapter(['opencode-go'], adapter)
+    ctx.llm.registerAdapter(['opencode-zen'], adapter)
     try {
       // The browser eagerly resolves every listed model; a single rejection hides the provider.
-      const models = await ctx.llm.listModels('opencode-go')
-      const resolved = await Promise.all(models.map(model => ctx.llm.resolveModelInfo('opencode-go', model.id)))
+      const models = await ctx.llm.listModels('opencode-zen')
+      const resolved = await Promise.all(models.map(model => ctx.llm.resolveModelInfo('opencode-zen', model.id)))
       expect(resolved.map(model => model.id)).toEqual(['ready'])
       expect(resolved[0]?.reasoning?.efforts.map(effort => effort.id)).toEqual(['low', 'high'])
       expect(await discoverCatalogModels(adapter.catalogOf(config))).toContainEqual(expect.objectContaining({
         id: 'not-ready', name: expect.stringContaining('metadata unavailable'),
       }))
-      await expect(ctx.llm.resolveModelInfo('opencode-go', 'not-ready')).rejects.toMatchObject({ code: 'MODEL_METADATA_UNAVAILABLE' })
+      await expect(ctx.llm.resolveModelInfo('opencode-zen', 'not-ready')).rejects.toMatchObject({ code: 'MODEL_METADATA_UNAVAILABLE' })
     } finally {
       await ctx.fiber.dispose()
     }
   })
 
   it('discovers union-alpha without a pi-ai entry', async () => {
-    expect(getBuiltinModels('opencode-go').some(model => model.id === 'union-alpha')).toBe(false)
+    expect(getBuiltinModels('opencode').some(model => model.id === 'union-alpha')).toBe(false)
     const gateway = await mockGateway({ status: 200, body: listingBody(['union-alpha']) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 3600000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 3600000, () => {}, () => {})
     expect(await discoverCatalogModels(catalog)).toContainEqual({
       id: 'union-alpha', name: 'Union Alpha Free', contextWindow: 262144, maxTokens: 131072,
     })
@@ -78,7 +78,7 @@ describe('runtime model metadata', () => {
 
   it('discovers an arbitrary future id and new metadata immediately on refresh', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(['union-alpha']) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 3600000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 3600000, () => {}, () => {})
     await discoverCatalogModels(catalog)
     const originalFetch = globalThis.fetch
     vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
@@ -97,7 +97,7 @@ describe('runtime model metadata', () => {
   it('keeps new models usable through a metadata outage without resurrecting retired models', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(['union-alpha']) })
     const failures: string[] = []
-    const catalog = new OpencodeGoCatalog(gateway.url, 3600000, detail => failures.push(detail.url), () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 3600000, detail => failures.push(detail.url), () => {})
     await discoverCatalogModels(catalog)
     metadataReplies(() => new Response('unavailable', { status: 503 }))
     expect((await discoverCatalogModels(catalog)).map(model => model.id)).toEqual(['union-alpha'])
@@ -111,7 +111,7 @@ describe('runtime model metadata', () => {
 
   it('makes missing metadata visible and retries it on the next direct model request', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(['tomorrows-model']) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 3600000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 3600000, () => {}, () => {})
     const models = await discoverCatalogModels(catalog)
     expect(models).toHaveLength(1)
     expect(models[0]).toMatchObject({ id: 'tomorrows-model', name: expect.stringContaining('metadata unavailable') })
@@ -131,7 +131,7 @@ describe('runtime model metadata', () => {
       expect(headers.get('if-none-match')).toBe('"version-1"')
       return new Response(null, { status: 304 })
     })
-    const catalog = new OpencodeGoCatalog(gateway.url, 3600000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 3600000, () => {}, () => {})
     const initial = await discoverCatalogModels(catalog)
     expect(await discoverCatalogModels(catalog)).toEqual(initial)
     expect(calls).toBe(2)
@@ -139,7 +139,7 @@ describe('runtime model metadata', () => {
 
   it('coalesces concurrent forced refreshes while preserving an existing request snapshot', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(['union-alpha']) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 3600000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 3600000, () => {}, () => {})
     const old = await catalog.snapshot()
     let finish!: (response: Response) => void
     metadataReplies(() => new Promise(resolve => { finish = resolve }))
@@ -155,12 +155,12 @@ describe('runtime model metadata', () => {
 
   it('rechecks availability on every picker read, independently of the runtime TTL', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(['kimi-k3']) })
-    const adapter = new OpencodeGoAdapter({ config: () => configOf(gateway.url), resolveApiKey: async () => 'test-key' })
-    expect((await adapter.listModels('opencode-go')).map(model => model.id)).toEqual(['kimi-k3'])
+    const adapter = new OpencodeZenAdapter({ config: () => configOf(gateway.url), resolveApiKey: async () => 'test-key' })
+    expect((await adapter.listModels('opencode-zen')).map(model => model.id)).toEqual(['kimi-k3'])
     gateway.setModelListing(200, listingBody(['union-alpha']))
-    expect((await adapter.listModels('opencode-go')).map(model => model.id)).toEqual(['union-alpha'])
+    expect((await adapter.listModels('opencode-zen')).map(model => model.id)).toEqual(['union-alpha'])
     gateway.setModelListing(200, listingBody([]))
-    expect(await adapter.listModels('opencode-go')).toEqual([])
+    expect(await adapter.listModels('opencode-zen')).toEqual([])
   })
 
   it('isolates malformed or unsupported entries and never takes the request origin from metadata', () => {
@@ -216,12 +216,12 @@ describe('new models use the declared protocol', () => {
     metadataReplies(() => Response.json(metadataDocument({ 'future-unseen-model': modelMetadata({ provider: { npm }, reasoning_options: [] }) })))
     const gateway = await mockGateway({ status: 200, body: listingBody(['future-unseen-model']) })
     gateway.pushCompletions({ events, namedEvents })
-    const adapter = new OpencodeGoAdapter({ config: () => configOf(`${gateway.url}/v1`, {
+    const adapter = new OpencodeZenAdapter({ config: () => configOf(`${gateway.url}/v1`, {
       modelLimits: cap === undefined ? {} : { 'future-unseen-model': { maxTokens: cap } },
     }), resolveApiKey: async () => 'test-key' })
     const chunks = []
     for await (const chunk of adapter.stream({
-      provider: 'opencode-go', model: 'future-unseen-model', sessionId: 'new-model-session' as never,
+      provider: 'opencode-zen', model: 'future-unseen-model', sessionId: 'new-model-session' as never,
       ...(cap === undefined ? {} : { maxTokens: 8192 }),
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'plugin', plugin: 'test' } })],
     })) chunks.push(chunk)

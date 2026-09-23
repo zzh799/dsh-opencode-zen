@@ -1,13 +1,13 @@
 /**
  * The browser-half entry: locale registration, the bound settings scope, the
  * credential invalidation subscription, and the `settings.section`
- * registration for the OpenCode Go page.
+ * registration for the OpenCode Zen page.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { stubSettingsScope } from './support/client.ts'
 import { apply } from '../src/client/index.ts'
-import { OpencodeGoSection } from '../src/client/Section.tsx'
+import { OpencodeZenSection } from '../src/client/Section.tsx'
 import { en } from '../src/client/locales.ts'
 
 interface ClientHarness {
@@ -43,14 +43,14 @@ function clientHarness(): ClientHarness {
     settingsScope: {
       bind: vi.fn((spec: { decode?: (section: unknown) => unknown }) => {
         // Exercise the decoder both ways so the entry's narrowing is covered.
-        spec.decode?.({ baseURL: 'https://opencode.ai/zen/go/v1' })
+        spec.decode?.({ baseURL: 'https://opencode.ai/zen/v1' })
         spec.decode?.('not-an-object')
         return scope
       }),
     },
     remote: {
       $mount: vi.fn(async () => () => {}),
-      opencodeGoModels: { read: async () => ({ ok: true, value: [] }) },
+      opencodeZenModels: { read: async () => ({ ok: true, value: [] }) },
       credentials: {
         describe: vi.fn(() => Promise.resolve({ ok: true, value: {} })),
         set: vi.fn(() => Promise.resolve({ ok: true, value: undefined })),
@@ -93,7 +93,7 @@ describe('client entry', () => {
 
     apply(harness.ctx as never)
 
-    expect(harness.localeRegister).toHaveBeenCalledWith('settings.opencode-go', expect.objectContaining({
+    expect(harness.localeRegister).toHaveBeenCalledWith('settings.opencode-zen', expect.objectContaining({
       en,
       zh: expect.any(Object) as Record<string, string>,
     }))
@@ -106,11 +106,11 @@ describe('client entry', () => {
       label: () => string
       inject: () => { t: (key: string) => string; loadModels: () => void }
     }
-    expect(registration).toMatchObject({ name: 'settings.section', id: 'opencode-go' })
+    expect(registration).toMatchObject({ name: 'settings.section', id: 'opencode-zen' })
     expect(registration.label()).toBe(en.nav)
     expect(registration.inject().t('nav')).toBe(en.nav)
     expect(registration.inject().loadModels).toBeTypeOf('function')
-    expect(harness.slotsRegister.mock.calls[0]?.[1]).toBe(OpencodeGoSection)
+    expect(harness.slotsRegister.mock.calls[0]?.[1]).toBe(OpencodeZenSection)
   })
 
   it('subscribes to credential invalidations for the page controller', () => {

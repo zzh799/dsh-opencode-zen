@@ -1,11 +1,11 @@
-import type { OpencodeGoConfig } from '../src/config.ts'
+import type { OpencodeZenConfig } from '../src/config.ts'
 
 /**
  * One resolved configuration for direct adapter construction or a plugin
  * mount: every field the schema would default is spelled out, so a test's
  * effective values never depend on defaults it never read.
  */
-export function configOf(baseURL: string, overrides: Partial<OpencodeGoConfig> = {}): OpencodeGoConfig {
+export function configOf(baseURL: string, overrides: Partial<OpencodeZenConfig> = {}): OpencodeZenConfig {
   return {
     enabled: true,
     showDeprecatedModels: false,

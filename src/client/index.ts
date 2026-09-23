@@ -1,6 +1,6 @@
 /**
- * OpenCode Go settings plugin, browser half. Registers the "OpenCode Go"
- * settings page over the `llm-opencode-go` namespace: the API key (stored
+ * OpenCode Zen settings plugin, browser half. Registers the "OpenCode Zen"
+ * settings page over the `llm-opencode-zen` namespace: the API key (stored
  * write-only through the credentials domain), the gateway's current model
  * listing, and the adapter knobs behind the page's advanced disclosure. The
  * Host settings and credential contracts stay behind their existing wire APIs.
@@ -16,27 +16,26 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.remote merge (the forwarded credentials event key)
 // into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import { OpencodeGoSection } from './Section.tsx'
-import type { OpencodeGoSectionInjected } from './Section.tsx'
-import { OpencodeGoSectionController, type OpencodeGoSettings } from './section-controller.ts'
+import { OpencodeZenSection } from './Section.tsx'
+import type { OpencodeZenSectionInjected } from './Section.tsx'
+import { OpencodeZenSectionController, type OpencodeZenSettings } from './section-controller.ts'
 import { en, zh } from './locales.ts'
-import { goRemote } from '../remote-contract.ts'
-import { registerUsagePill } from './usage.ts'
+import { zenRemote } from '../remote-contract.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** The OpenCode Go settings page copy. */
-    'settings.opencode-go': keyof typeof en
+    /** The OpenCode Zen settings page copy. */
+    'settings.opencode-zen': keyof typeof en
   }
 }
 
 /** Dictionary namespace owned by this plugin. */
-const NS = 'settings.opencode-go'
+const NS = 'settings.opencode-zen'
 
-export type { OpencodeGoSectionProps } from './Section.tsx'
-export type { OpencodeGoSectionState, OpencodeGoSettings } from './section-controller.ts'
-export { OPENCODE_GO_NS } from './section-controller.ts'
-export type { OpencodeGoKey } from './locales.ts'
+export type { OpencodeZenSectionProps } from './Section.tsx'
+export type { OpencodeZenSectionState, OpencodeZenSettings } from './section-controller.ts'
+export { OPENCODE_ZEN_NS } from './section-controller.ts'
+export type { OpencodeZenKey } from './locales.ts'
 
 /**
  * Required services (cordis fiber inject). The target slot is declared by
@@ -54,45 +53,44 @@ export const inject = ['slots', 'locale', 'remote', 'remote.credentials', 'remot
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'llm-opencode-go: copy dictionaries')
-  registerUsagePill(ctx)
-  const modelsReady = ctx.remote.$mount(goRemote)
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'llm-opencode-zen: copy dictionaries')
+  const modelsReady = ctx.remote.$mount(zenRemote)
   ctx.effect(async () => await modelsReady)
-  ctx.inject(['configForms', 'remote.opencodeGoModels'], child => {
+  ctx.inject(['configForms', 'remote.opencodeZenModels'], child => {
     const forms = child.get('configForms') as { get<T>(id: string): SettingsScope<T> }
     // Profile forms use the bundle entry id, not the legacy settings namespace.
-    mountSettings(child, forms.get<OpencodeGoSettings>('opencode-go'), modelsReady)
+    mountSettings(child, forms.get<OpencodeZenSettings>('opencode-zen'), modelsReady)
   })
-  ctx.inject(['settingsScope', 'remote.opencodeGoModels'], child => {
+  ctx.inject(['settingsScope', 'remote.opencodeZenModels'], child => {
     mountSettings(child, child.settingsScope.bind({
-      namespace: 'llm-opencode-go',
-      decode: (section): OpencodeGoSettings | undefined =>
-        typeof section === 'object' && section !== null ? section as OpencodeGoSettings : undefined,
+      namespace: 'llm-opencode-zen',
+      decode: (section): OpencodeZenSettings | undefined =>
+        typeof section === 'object' && section !== null ? section as OpencodeZenSettings : undefined,
     }), modelsReady)
   })
 }
 
-function mountSettings(ctx: ClientContext, scope: SettingsScope<OpencodeGoSettings>, modelsReady: Promise<unknown>): void {
-  const controller = new OpencodeGoSectionController(scope, ctx, async () => {
+function mountSettings(ctx: ClientContext, scope: SettingsScope<OpencodeZenSettings>, modelsReady: Promise<unknown>): void {
+  const controller = new OpencodeZenSectionController(scope, ctx, async () => {
     await modelsReady
-    return ctx.remote.opencodeGoModels.read()
+    return ctx.remote.opencodeZenModels.read()
   })
   ctx.effect(() => () => controller.dispose())
-  const t = ctx.locale.bind(NS) as OpencodeGoSectionInjected['t']
-  const injected = (): OpencodeGoSectionInjected => ({ ...controller.inject(), t })
+  const t = ctx.locale.bind(NS) as OpencodeZenSectionInjected['t']
+  const injected = (): OpencodeZenSectionInjected => ({ ...controller.inject(), t })
 
   ctx.effect(() => {
     const refresh = (ref: string): void => { controller.refreshCredential(ref) }
     const dispose = ctx.remote.$on('credentials/reference-updated', refresh)
     /* v8 ignore next -- fiber teardown never runs in unit tests */
     return () => { dispose() }
-  }, 'llm-opencode-go: pushed credential invalidations')
+  }, 'llm-opencode-zen: pushed credential invalidations')
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
-    id: 'opencode-go',
+    id: 'opencode-zen',
     order: 20,
     label: () => t('nav'),
     inject: injected,
-  }, OpencodeGoSection))
+  }, OpencodeZenSection))
 }

@@ -4,3 +4,4 @@ lib/
 coverage/
 .env
 .verification-root
+.DS_Store

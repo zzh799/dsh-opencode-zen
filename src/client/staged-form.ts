@@ -1,5 +1,5 @@
 /**
- * The staged form behind the OpenCode Go settings page.
+ * The staged form behind the OpenCode Zen settings page.
  *
  * The page stages what the user types and writes it only when they save. Each
  * settings write is a durable, revision-fenced document mutation, so a control
@@ -193,7 +193,7 @@ export function jsonField(field: string): FieldSpec {
 }
 
 /**
- * Stages the page's edits over the `llm-opencode-go` namespace and writes them
+ * Stages the page's edits over the `llm-opencode-zen` namespace and writes them
  * on save.
  *
  * The form publishes through a snapshot store because the slot component reads
@@ -374,7 +374,7 @@ export class StagedForm {
     const spec = this.specs.get(field)
     // Every call site names a field this page declared; a missing one is a
     // wiring mistake that must not degrade into a silently inert control.
-    if (spec === undefined) throw new Error(`opencode-go settings page has no field ${field}`)
+    if (spec === undefined) throw new Error(`opencode-zen settings page has no field ${field}`)
     return spec
   }
 

@@ -1,12 +1,12 @@
 /**
- * Configuration schema for the OpenCode Go adapter plugin. The section is
- * installed under the `llm-opencode-go` settings namespace on DSH 0.1.5/0.1.6.
- * DSH 0.1.7 edits the `opencode-go` profile entry through live references.
+ * Configuration schema for the OpenCode Zen adapter plugin. The section is
+ * installed under the `llm-opencode-zen` settings namespace on DSH 0.1.5/0.1.6.
+ * DSH 0.1.7 edits the `opencode-zen` profile entry through live references.
  * Both paths update field by field without a restart. Self-contained constraints
  * (URL shape, numeric bounds) fail at load for the composition layer and
  * refuse the write for the settings layer.
  *
- * @module dsh-llm-opencode-go/config
+ * @module dsh-opencode-zen/config
  */
 
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -32,7 +32,7 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
  * can override only the value it needs. Null explicitly selects the catalog
  * value even when a lower profile/settings layer supplies an override.
  */
-export interface OpencodeGoModelLimit {
+export interface OpencodeZenModelLimit {
   /** Context window in tokens, overriding what the catalog advertised. */
   contextWindow?: number | null
   /** Output cap per request, overriding what the catalog advertised. */
@@ -40,13 +40,13 @@ export interface OpencodeGoModelLimit {
 }
 
 /** Per-model capacities; a null entry selects both original catalog values. */
-export type OpencodeGoModelLimits = Record<string, OpencodeGoModelLimit | null>
+export type OpencodeZenModelLimits = Record<string, OpencodeZenModelLimit | null>
 
 /** Runtime configuration for one plugin mount. */
-export interface OpencodeGoConfig {
+export interface OpencodeZenConfig {
   /**
    * Whether this adapter serves its route at all. False withdraws the
-   * `opencode-go` route and its models from every picker without unloading the
+   * `opencode-zen` route and its models from every picker without unloading the
    * plugin, so the settings page that owns this switch stays reachable to turn
    * it back on. Independent of the credential: a key present while this is
    * false registers nothing.
@@ -69,10 +69,10 @@ export interface OpencodeGoConfig {
   /** Raw encoded-byte target for one request image before base64 expansion. */
   requestImageMaxBytes: number
   /** Per-model capacity overrides; an absent field inherits the catalog value. */
-  modelLimits: OpencodeGoModelLimits
+  modelLimits: OpencodeZenModelLimits
 }
 
-/** Runtime schema for {@link OpencodeGoConfig}. */
+/** Runtime schema for {@link OpencodeZenConfig}. */
 const fields = {
   enabled: z.boolean().default(true),
   showDeprecatedModels: z.boolean().default(false),
@@ -93,17 +93,17 @@ const fields = {
 }
 
 /** Plain values used by the adapter and by pre-0.1.7 settings documents. */
-export const PlainConfig: z<OpencodeGoConfig> = z.object(fields)
+export const PlainConfig: z<OpencodeZenConfig> = z.object(fields)
 
 /** 0.1.7's Loader retains these references when profile fields change. */
-export type LiveConfig = { [K in keyof OpencodeGoConfig]: { get(): OpencodeGoConfig[K] } }
+export type LiveConfig = { [K in keyof OpencodeZenConfig]: { get(): OpencodeZenConfig[K] } }
 export const Config = z.object(Object.fromEntries(
   Object.entries(fields).map(([key, schema]) => [key, schema.volatile()]),
-)) as z<Partial<OpencodeGoConfig>, LiveConfig>
+)) as z<Partial<OpencodeZenConfig>, LiveConfig>
 
 /** Keep the Loader's references: reparsing them would detach live updates. */
-export function readConfig(config: LiveConfig): OpencodeGoConfig {
-  return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, value.get()])) as unknown as OpencodeGoConfig
+export function readConfig(config: LiveConfig): OpencodeZenConfig {
+  return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, value.get()])) as unknown as OpencodeZenConfig
 }
 
 /**
@@ -118,13 +118,13 @@ export function assertBaseURL(raw: string): string {
   try {
     url = new URL(raw)
   } catch {
-    throw new Error(`llm-opencode-go: baseURL "${raw}" is not a valid URL`)
+    throw new Error(`llm-opencode-zen: baseURL "${raw}" is not a valid URL`)
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error(`llm-opencode-go: baseURL "${raw}" must be http or https`)
+    throw new Error(`llm-opencode-zen: baseURL "${raw}" must be http or https`)
   }
   if (url.search.length > 0 || url.hash.length > 0) {
-    throw new Error(`llm-opencode-go: baseURL "${raw}" must not carry a query or fragment`)
+    throw new Error(`llm-opencode-zen: baseURL "${raw}" must not carry a query or fragment`)
   }
   return url.toString().replace(/\/+$/, '')
 }

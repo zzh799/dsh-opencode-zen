@@ -32,14 +32,12 @@ const llm = await import('@deepseek-ai/dsh-llm')
 const plugin = await import('../../lib/index.js')
 const { LocalAttachmentStore } = await import(localPackage)
 const sharp = createRequire(import.meta.resolve(localPackage))('sharp')
-const usage = Object.fromEntries(['rolling', 'weekly', 'monthly'].map(key => [key,
-  { status: 'ok', percent: 12, resetsAt: '2026-10-01T00:00:00Z' }]))
 const bodies = []
 const networkFetch = globalThis.fetch
 globalThis.fetch = (input, init) => {
   const url = input instanceof Request ? input.url : String(input)
   if (url === 'https://models.dev/api.json') return Promise.resolve(Response.json({
-    'opencode-go': { npm: '@ai-sdk/openai-compatible', models: {
+    'opencode': { npm: '@ai-sdk/openai-compatible', models: {
       'compat-model': { name: 'Compatibility fixture', reasoning: false, release_date: '2026-09-22',
         modalities: { input: ['text', 'image'] }, limit: { context: 100000, output: 4096 } },
     } },
@@ -51,12 +49,6 @@ const server = createServer((request, response) => {
   let body = ''
   request.on('data', chunk => { body += chunk })
   request.on('end', () => {
-    if (request.url === '/usage') {
-      assert.equal(request.headers.authorization, 'Bearer fixture-key')
-      response.writeHead(200, { 'content-type': 'application/json' })
-      response.end(JSON.stringify({ usage }))
-      return
-    }
     if (request.url === '/models') {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(JSON.stringify({ data: [{ id: 'compat-model' }] }))
@@ -75,12 +67,12 @@ const server = createServer((request, response) => {
   })
 })
 const ctx = new Context()
-const attachmentHome = await mkdtemp(join(tmpdir(), 'opencode-go-image-compat-'))
-process.env.OPENCODE_GO_COMPAT_KEY = 'fixture-key'
+const attachmentHome = await mkdtemp(join(tmpdir(), 'opencode-zen-image-compat-'))
+process.env.OPENCODE_ZEN_COMPAT_KEY = 'fixture-key'
 try {
   server.listen(0, '127.0.0.1')
   await once(server, 'listening')
-  const config = plugin.PlainConfig({ apiKeyEnv: 'OPENCODE_GO_COMPAT_KEY',
+  const config = plugin.PlainConfig({ apiKeyEnv: 'OPENCODE_ZEN_COMPAT_KEY',
     baseURL: `http://127.0.0.1:${server.address().port}`, maxRequestImageBytes: 8,
     modelLimits: { 'compat-model': { contextWindow: 50000, maxTokens: 1024 } } })
   ctx.baseUrl = new URL('../../package.json', import.meta.url).href
@@ -93,39 +85,38 @@ try {
   const id = await ctx.loader.create({ name: new URL('../../lib/index.js', import.meta.url).href, config })
   await ctx.loader.await()
   assert.ok(ctx.loader.resolve(id).fiber, 'plugin mounts through the real Loader')
-  assert.ok(ctx.llm.listProviders().some(p => p.id === 'opencode-go'))
-  assert.equal((await ctx.llm.listModels('opencode-go'))[0].id, 'compat-model')
-  assert.equal((await ctx.llm.resolveModelInfo('opencode-go', 'compat-model')).context.contextWindow, 50000)
+  assert.ok(ctx.llm.listProviders().some(p => p.id === 'opencode-zen'))
+  assert.equal((await ctx.llm.listModels('opencode-zen'))[0].id, 'compat-model')
+  assert.equal((await ctx.llm.resolveModelInfo('opencode-zen', 'compat-model')).context.contextWindow, 50000)
   if (modern) {
-    const models = await ctx.typertGateway.invoke({ namespace: 'opencodeGoModels', method: 'read', args: {} })
+    const models = await ctx.typertGateway.invoke({ namespace: 'opencodeZenModels', method: 'read', args: {} })
     assert.equal(models[0].releaseDate, '2026-09-22', 'model metadata survives the actual RPC codec')
     assert.equal(models[0].contextWindow, 100000, 'settings show raw API capacity')
   }
-  if (modern) assert.deepEqual(await ctx.typertGateway.invoke({ namespace: 'opencodeGoUsage', method: 'read', args: {} }), usage)
   const user = content => llm.createUserMessage({ content, source: { kind: 'plugin', plugin: 'compat-test' } })
-  const request = messages => ({ provider: 'opencode-go', model: 'compat-model', messages, sessionId: 'compat-session' })
+  const request = messages => ({ provider: 'opencode-zen', model: 'compat-model', messages, sessionId: 'compat-session' })
   const drain = async stream => { const chunks = []; for await (const chunk of stream) chunks.push(chunk); return chunks }
   const text = await drain(ctx.llm.stream({ ...request([user([{ type: 'text', text: 'hello' }])]), maxTokens: 8192 }))
   assert.ok(text.some(c => c.type === 'text-delta' && c.text === 'compat-ok'))
   assert.equal(bodies.at(-1).max_tokens ?? bodies.at(-1).max_completion_tokens, 1024)
   // Every host reads the next configuration without mutating catalog references.
   let limitsConfig = { ...config }
-  const limitsAdapter = new plugin.OpencodeGoAdapter({ config: () => limitsConfig, resolveApiKey: async () => 'fixture-key' })
+  const limitsAdapter = new plugin.OpencodeZenAdapter({ config: () => limitsConfig, resolveApiKey: async () => 'fixture-key' })
   const discovered = await plugin.discoverCatalogModels(limitsAdapter.catalogOf(limitsConfig))
   assert.equal(discovered[0].contextWindow, 100000)
   assert.equal(discovered[0].maxTokens, 4096)
-  assert.equal((await limitsAdapter.resolveModel('opencode-go', 'compat-model')).context.contextWindow, 50000)
+  assert.equal((await limitsAdapter.resolveModel('opencode-zen', 'compat-model')).context.contextWindow, 50000)
   limitsConfig = { ...limitsConfig, modelLimits: { 'compat-model': { contextWindow: 60000, maxTokens: 512 } } }
-  assert.equal((await limitsAdapter.resolveModel('opencode-go', 'compat-model')).context.contextWindow, 60000)
+  assert.equal((await limitsAdapter.resolveModel('opencode-zen', 'compat-model')).context.contextWindow, 60000)
   await drain(limitsAdapter.stream({ ...request([]), maxTokens: 8192 }))
   assert.equal(bodies.at(-1).max_tokens ?? bodies.at(-1).max_completion_tokens, 512)
   limitsConfig = { ...limitsConfig, modelLimits: { 'compat-model': null } }
-  assert.equal((await limitsAdapter.resolveModel('opencode-go', 'compat-model')).context.contextWindow, 100000)
+  assert.equal((await limitsAdapter.resolveModel('opencode-zen', 'compat-model')).context.contextWindow, 100000)
   await drain(limitsAdapter.stream(request([])))
   assert.equal(bodies.at(-1).max_tokens ?? bodies.at(-1).max_completion_tokens, 4096)
   if (modern) {
     const messages = [
-      { id: 'assistant-tool-call', role: 'assistant', source: { kind: 'model', provider: 'opencode-go', model: 'compat-model' },
+      { id: 'assistant-tool-call', role: 'assistant', source: { kind: 'model', provider: 'opencode-zen', model: 'compat-model' },
         content: [{ type: 'tool-call', id: 'call', name: 'lookup', arguments: '{}' }] },
       llm.createToolResultMessage({ callId: 'call', content: [{ type: 'text', text: 'tool-result-ok' }], isError: true }),
     ]
@@ -138,7 +129,7 @@ try {
   // The original image-transport mock below ignores the second argument entirely.
   await ctx.plugin(LocalAttachmentStore, { dshHome: attachmentHome, normalizedImageMaxPixels: 8 * 1024 * 1024 })
   const imageConfig = { ...config, maxRequestImageBytes: 20 * 1024 * 1024 }
-  const realAdapter = new plugin.OpencodeGoAdapter({ config: () => imageConfig,
+  const realAdapter = new plugin.OpencodeZenAdapter({ config: () => imageConfig,
     resolveApiKey: async () => 'fixture-key', imageAccess: {
       resolveImageAccess: () => undefined,
       resolveAttachments: () => ctx.attachments,
@@ -170,7 +161,7 @@ try {
     // text and image when the host hands it to this third-party adapter.
     if (modern && width === 800) {
       await drain(realAdapter.stream(request([
-        { id: 'image-tool-call', role: 'assistant', source: { kind: 'model', provider: 'opencode-go', model: 'compat-model' },
+        { id: 'image-tool-call', role: 'assistant', source: { kind: 'model', provider: 'opencode-zen', model: 'compat-model' },
           content: [{ type: 'tool-call', id: 'image-call', name: 'lookup', arguments: '{}' }] },
         llm.createToolResultMessage({ callId: 'image-call', isError: false, content: [
           { type: 'text', text: 'retained-head' }, { type: 'image', attachment }, { type: 'text', text: 'retained-tail' },
@@ -187,7 +178,7 @@ try {
 
   const reads = []
   let encodedBytes = 3
-  const adapter = new plugin.OpencodeGoAdapter({ config: () => config,
+  const adapter = new plugin.OpencodeZenAdapter({ config: () => config,
     resolveApiKey: async () => 'fixture-key', imageAccess: {
       resolveImageAccess: () => undefined,
       resolveAttachments: () => ({ readImageRequest: async ref => {

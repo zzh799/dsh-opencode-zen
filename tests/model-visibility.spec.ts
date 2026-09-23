@@ -1,11 +1,11 @@
-import { registerGoRemotes } from '../src/remotes.ts'
+import { registerZenRemotes } from '../src/remotes.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Registry from '@deepseek-ai/dsh-typert-registry'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { OpencodeGoAdapter } from '../src/adapter.ts'
-import { GoModelsService } from '../src/models.ts'
+import { OpencodeZenAdapter } from '../src/adapter.ts'
+import { ZenModelsService } from '../src/models.ts'
 import { PlainConfig } from '../src/config.ts'
 import { isNewModel, sortModels } from '../src/models-contract.ts'
 import { closeMockGateways, listingBody, mockGateway, textEvents } from './mock-gateway.ts'
@@ -26,34 +26,34 @@ it('keeps settings gateway-only and filters deprecated picker entries without di
   const gateway = await mockGateway({ status: 200, body: listingBody(['current', 'old']) })
   const config = configOf(`${gateway.url}/v1`)
   expect(PlainConfig({}).showDeprecatedModels).toBe(false)
-  const adapter = new OpencodeGoAdapter({ config: () => config, resolveApiKey: async () => 'test-key' })
+  const adapter = new OpencodeZenAdapter({ config: () => config, resolveApiKey: async () => 'test-key' })
   const ctx = new Context()
   await ctx.plugin(Registry)
   await ctx.plugin(Gateway)
-  registerGoRemotes(ctx)
-  await ctx.plugin(GoModelsService, { catalog: () => adapter.catalogOf(config) })
+  registerZenRemotes(ctx)
+  await ctx.plugin(ZenModelsService, { catalog: () => adapter.catalogOf(config) })
   try {
-    const read = () => ctx.typertGateway.invoke({ namespace: 'opencodeGoModels', method: 'read', args: {} })
+    const read = () => ctx.typertGateway.invoke({ namespace: 'opencodeZenModels', method: 'read', args: {} })
     expect(await read()).toEqual([
       expect.objectContaining({ id: 'current', releaseDate: '2026-09-22', contextWindow: 262144 }),
       expect.objectContaining({ id: 'old', deprecated: true }),
     ])
-    expect((await adapter.listModels('opencode-go')).map(m => m.id)).toEqual(['current'])
+    expect((await adapter.listModels('opencode-zen')).map(m => m.id)).toEqual(['current'])
     config.showDeprecatedModels = true
-    expect((await adapter.listModels('opencode-go')).map(m => m.id)).toEqual(['current', 'old'])
+    expect((await adapter.listModels('opencode-zen')).map(m => m.id)).toEqual(['current', 'old'])
     config.showDeprecatedModels = false
     // Hiding affects pickers; existing conversations can keep using the served model.
     gateway.pushCompletions({ events: textEvents })
     const chunks = []
-    for await (const chunk of adapter.stream({ provider: 'opencode-go', model: 'old',
+    for await (const chunk of adapter.stream({ provider: 'opencode-zen', model: 'old',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'plugin', plugin: 'test' } })] })) chunks.push(chunk)
     expect(chunks.length).toBeGreaterThan(0)
     metadataDown = true
-    expect((await adapter.listModels('opencode-go')).map(m => m.id)).toEqual(['current'])
+    expect((await adapter.listModels('opencode-zen')).map(m => m.id)).toEqual(['current'])
     config.showDeprecatedModels = true
     gateway.setModelListing(200, listingBody(['current']))
     expect((await read() as Array<{ id: string }>).map(m => m.id)).toEqual(['current'])
-    expect((await adapter.listModels('opencode-go')).map(m => m.id)).toEqual(['current'])
+    expect((await adapter.listModels('opencode-zen')).map(m => m.id)).toEqual(['current'])
   } finally { await ctx.fiber.dispose() }
 })
 

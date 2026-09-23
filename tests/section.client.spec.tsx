@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /**
- * The OpenCode Go settings page component: the key control and its badge, the
+ * The OpenCode Zen settings page component: the key control and its badge, the
  * gateway model listing it reads on mount, the advanced disclosure that holds
  * the tuning fields, the save/discard actions, and the unavailable posture.
  */
@@ -10,9 +10,9 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from './support/client.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { OpencodeGoSection } from '../src/client/Section.tsx'
-import type { OpencodeGoSectionProps, OpencodeGoSectionState } from '../src/client/Section.tsx'
-import { OpencodeGoSectionController, type OpencodeGoSettings } from '../src/client/section-controller.ts'
+import { OpencodeZenSection } from '../src/client/Section.tsx'
+import type { OpencodeZenSectionProps, OpencodeZenSectionState } from '../src/client/Section.tsx'
+import { OpencodeZenSectionController, type OpencodeZenSettings } from '../src/client/section-controller.ts'
 import { stubSettingsScope } from './support/client.ts'
 import { en } from '../src/client/locales.ts'
 
@@ -24,7 +24,7 @@ const t = (key: keyof typeof en, params?: Record<string, unknown>): string =>
     en[key],
   )
 
-function field(text: string, rest: Partial<OpencodeGoSectionState['baseURL']> = {}): OpencodeGoSectionState['baseURL'] {
+function field(text: string, rest: Partial<OpencodeZenSectionState['baseURL']> = {}): OpencodeZenSectionState['baseURL'] {
   return { text, overridden: false, invalid: false, ...rest }
 }
 
@@ -32,7 +32,7 @@ type SectionField = 'baseURL' | 'apiKeyEnv' | 'refreshMinutes' | 'streamIdleTime
   | 'maxRequestImageBytes' | 'requestImagePixelBudget' | 'requestImageMaxBytes' | 'apiKey' | 'models'
   | 'modelLimits' | 'modelLimitDraft'
 
-const settled: Omit<OpencodeGoSectionState, SectionField> = {
+const settled: Omit<OpencodeZenSectionState, SectionField> = {
   available: true,
   writable: true,
   dirty: false,
@@ -47,7 +47,7 @@ const settled: Omit<OpencodeGoSectionState, SectionField> = {
   apiKeyWritable: true,
 }
 
-type ModelEntry = import('../src/models-contract.ts').GoModel
+type ModelEntry = import('../src/models-contract.ts').ZenModel
 
 function listing(entries: readonly ModelEntry[]) {
   return {
@@ -58,11 +58,11 @@ function listing(entries: readonly ModelEntry[]) {
   }
 }
 
-function stateOf(overrides: Partial<OpencodeGoSectionState> = {}): OpencodeGoSectionState {
+function stateOf(overrides: Partial<OpencodeZenSectionState> = {}): OpencodeZenSectionState {
   return {
     ...settled,
     apiKeyEnv: field('OPENCODE_API_KEY'),
-    baseURL: field('https://opencode.ai/zen/go/v1'),
+    baseURL: field('https://opencode.ai/zen/v1'),
     refreshMinutes: field('60'),
     streamIdleTimeoutMs: field('300000'),
     maxRequestImageBytes: field('20971520'),
@@ -88,15 +88,15 @@ function actions() {
   }
 }
 
-function renderSection(state: OpencodeGoSectionState, overrides: Partial<ReturnType<typeof actions>> = {}) {
+function renderSection(state: OpencodeZenSectionState, overrides: Partial<ReturnType<typeof actions>> = {}) {
   const store = createSnapshotStore(state)
   const props = {
     ...actions(),
     ...overrides,
     t,
-    useOpencodeGo: bindSnapshotSelector(store),
-  } as unknown as OpencodeGoSectionProps
-  render(<OpencodeGoSection {...props} />)
+    useOpencodeZen: bindSnapshotSelector(store),
+  } as unknown as OpencodeZenSectionProps
+  render(<OpencodeZenSection {...props} />)
   return store
 }
 
@@ -111,9 +111,9 @@ function openModelLimits() {
 
 }
 
-describe('OpencodeGoSection', () => {
+describe('OpencodeZenSection', () => {
   it('renders nothing until every injected seat is present', () => {
-    const { container } = render(<OpencodeGoSection t={t} />)
+    const { container } = render(<OpencodeZenSection t={t} />)
     expect(container.innerHTML).toBe('')
   })
 
@@ -324,7 +324,7 @@ describe('OpencodeGoSection', () => {
     expect(screen.queryByText(en.advancedHint)).toBeNull()
 
     openAdvanced()
-    expect(screen.getByLabelText(en.baseURLLabel)).toHaveProperty('value', 'https://opencode.ai/zen/go/v1')
+    expect(screen.getByLabelText(en.baseURLLabel)).toHaveProperty('value', 'https://opencode.ai/zen/v1')
     expect(screen.getByLabelText(en.refreshMinutesLabel)).toHaveProperty('value', '30')
     expect(screen.getByText(en.keyLabel)).toBeTruthy()
   })
@@ -333,11 +333,11 @@ describe('OpencodeGoSection', () => {
     renderSection(stateOf())
     const trigger = screen.getByText(en.advancedLabel).closest('button') as HTMLButtonElement
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(trigger.getAttribute('aria-controls')).toBe('opencode-go-advanced')
+    expect(trigger.getAttribute('aria-controls')).toBe('opencode-zen-advanced')
 
     fireEvent.click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(document.getElementById('opencode-go-advanced')).not.toBeNull()
+    expect(document.getElementById('opencode-zen-advanced')).not.toBeNull()
   })
 
   it('stages edits through the injected actions and resets on demand', () => {
@@ -355,10 +355,10 @@ describe('OpencodeGoSection', () => {
   it('enables save only for a dirty, valid form and shows the failure note', () => {
     const acts = actions()
     const { rerender } = render((
-      <OpencodeGoSection {...{
+      <OpencodeZenSection {...{
         ...acts,
         t,
-        useOpencodeGo: bindSnapshotSelector(createSnapshotStore(stateOf({ dirty: true }))),
+        useOpencodeZen: bindSnapshotSelector(createSnapshotStore(stateOf({ dirty: true }))),
       }}
       />
     ))
@@ -370,10 +370,10 @@ describe('OpencodeGoSection', () => {
     expect(acts.save).toHaveBeenCalled()
 
     rerender((
-      <OpencodeGoSection {...{
+      <OpencodeZenSection {...{
         ...acts,
         t,
-        useOpencodeGo: bindSnapshotSelector(createSnapshotStore(stateOf({ dirty: true, failed: true }))),
+        useOpencodeZen: bindSnapshotSelector(createSnapshotStore(stateOf({ dirty: true, failed: true }))),
       }}
       />
     ))
@@ -384,7 +384,7 @@ describe('OpencodeGoSection', () => {
     const edits = actions()
     renderSection(stateOf({
       apiKeyEnv: field('OPENCODE_API_KEY', { overridden: true }),
-      baseURL: field('https://opencode.ai/zen/go/v1', { overridden: true }),
+      baseURL: field('https://opencode.ai/zen/v1', { overridden: true }),
       refreshMinutes: field('not-a-number', { overridden: true, invalid: true }),
       streamIdleTimeoutMs: field('300000', { overridden: true }),
       maxRequestImageBytes: field('20971520', { overridden: true }),
@@ -445,19 +445,19 @@ describe('OpencodeGoSection', () => {
   })
 })
 
-describe('OpencodeGoSectionController through the component', () => {
+describe('OpencodeZenSectionController through the component', () => {
   it('persists picker visibility without saving unrelated drafts and reports refused writes', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     host.set.mockImplementation((field: string, value: unknown) => {
       host.publish({ value: { ...host.scope.getSnapshot().value, [field]: value } })
     })
-    const controller = new OpencodeGoSectionController(host.scope, { remote: {
+    const controller = new OpencodeZenSectionController(host.scope, { remote: {
       credentials: { describe: async () => ({ ok: true, value: {} }) },
       llm: { discoverModels: async () => ({ ok: true, value: [] }) },
     } } as never)
-    render(<OpencodeGoSection {...controller.inject()} t={t}
-      useOpencodeGo={bindSnapshotSelector(controller.inject().hooks.opencodeGo)} />)
+    render(<OpencodeZenSection {...controller.inject()} t={t}
+      useOpencodeZen={bindSnapshotSelector(controller.inject().hooks.opencodeZen)} />)
     try {
       await act(async () => { await Promise.resolve() })
       fireEvent.change(screen.getByLabelText(en.keyLabel), { target: { value: 'unsaved-key' } })
@@ -474,21 +474,21 @@ describe('OpencodeGoSectionController through the component', () => {
   })
 
   it('saves, discards, and resets capacities while preserving explicit catalog choices', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     host.set.mockImplementation((field: string, value: unknown) => {
       host.publish({
         value: { ...host.scope.getSnapshot().value, [field]: structuredClone(value) },
         user: { ...host.scope.getSnapshot().user as object, [field]: structuredClone(value) },
       })
     })
-    const controller = new OpencodeGoSectionController(host.scope, { remote: {
+    const controller = new OpencodeZenSectionController(host.scope, { remote: {
       credentials: { describe: async () => ({ ok: true, value: {} }) },
       llm: { discoverModels: async () => ({ ok: true, value: [{ id: 'm', name: 'Model', contextWindow: 262144, maxTokens: 32768 }] }) },
     } } as never)
     host.publish({ status: 'ready', writable: true,
       value: { modelLimits: { m: { contextWindow: 100000, maxTokens: 1024 } } }, user: {} })
-    render(<OpencodeGoSection {...controller.inject()} t={t}
-      useOpencodeGo={bindSnapshotSelector(controller.inject().hooks.opencodeGo)} />)
+    render(<OpencodeZenSection {...controller.inject()} t={t}
+      useOpencodeZen={bindSnapshotSelector(controller.inject().hooks.opencodeZen)} />)
     try {
       await act(async () => { await Promise.resolve() })
       openModelLimits()
@@ -520,7 +520,7 @@ describe('OpencodeGoSectionController through the component', () => {
   })
 
   it('drives a staged edit end to end against the stub scope', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     host.set.mockImplementation((field: string, value: unknown) => {
       const section = { ...host.scope.getSnapshot().value as object }
       const user = { ...host.scope.getSnapshot().user as object }
@@ -532,15 +532,15 @@ describe('OpencodeGoSectionController through the component', () => {
         llm: { discoverModels: vi.fn(() => Promise.resolve({ ok: true, value: [] })) },
       },
     } as never
-    const controller = new OpencodeGoSectionController(host.scope, ctx)
-    host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://opencode.ai/zen/go/v1' }, user: {} })
+    const controller = new OpencodeZenSectionController(host.scope, ctx)
+    host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://opencode.ai/zen/v1' }, user: {} })
 
     render((
-      <OpencodeGoSection
+      <OpencodeZenSection
         {...{
           ...controller.inject(),
           t,
-          useOpencodeGo: bindSnapshotSelector(controller.inject().hooks.opencodeGo),
+          useOpencodeZen: bindSnapshotSelector(controller.inject().hooks.opencodeZen),
         }}
       />
     ))

@@ -2,10 +2,12 @@
 import { build } from 'esbuild'
 import { transform } from 'lightningcss'
 import { readFile, mkdir, rm, writeFile } from 'node:fs/promises'
-import { basename, resolve } from 'node:path'
+import { basename, resolve, relative } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+const root = fileURLToPath(new URL('..', import.meta.url))
 await rm('lib', { recursive: true, force: true })
 await mkdir('lib', { recursive: true })
 for (const face of ['host', 'client']) {
@@ -18,9 +20,12 @@ const external = ['react', 'react/jsx-runtime', '@deepseek-ai/cordis', '@deepsee
 const cssPlugin = {
   name: 'plugin-css-modules',
   setup(build) {
-    build.onResolve({ filter: /\.module\.css$/ }, args => ({ path: resolve(args.resolveDir, args.path), namespace: 'plugin-css' }))
+    // esbuild prints namespace-module paths verbatim in its per-module comments,
+    // so hand it a repo-relative path; the absolute path is recovered in onLoad.
+    build.onResolve({ filter: /\.module\.css$/ }, args => ({ path: relative(root, resolve(args.resolveDir, args.path)), namespace: 'plugin-css' }))
     build.onLoad({ filter: /.*/, namespace: 'plugin-css' }, async args => {
-      const result = transform({ filename: args.path, code: await readFile(args.path), cssModules: { pattern: '[hash]_[local]' }, minify: true })
+      const file = resolve(root, args.path)
+      const result = transform({ filename: args.path, code: await readFile(file), cssModules: { pattern: '[hash]_[local]' }, minify: true })
       const classes = Object.fromEntries(Object.entries(result.exports).map(([key, value]) => [key,
         [value.name, ...value.composes.map(item => {
           if (item.type === 'dependency') throw new Error(`External CSS composition is unsupported: ${item.name}`)

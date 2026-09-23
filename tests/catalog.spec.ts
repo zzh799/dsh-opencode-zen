@@ -2,7 +2,7 @@ import { brotliCompressSync, deflateSync, gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import {
-  OpencodeGoCatalog,
+  OpencodeZenCatalog,
   discoverCatalogModels,
   readLiveModelIds,
 } from '../src/catalog.ts'
@@ -60,13 +60,13 @@ describe('readLiveModelIds', () => {
   })
 })
 
-describe('OpencodeGoCatalog', () => {
+describe('OpencodeZenCatalog', () => {
   it.each(responseFormats)('reads $name from both discovery endpoints over HTTP', async ({ name: _name, ...format }) => {
     const gateway = await mockGateway({ status: 200, body: listingBody([metadataOnlyId]), ...format })
     const metadataGateway = await mockGateway({ status: 200, body: metadataOnlyDocument(), ...format })
     routeMetadataTo(metadataGateway.url)
     const fallback = vi.fn()
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, fallback, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, fallback, () => {})
 
     const snapshot = await catalog.snapshot()
 
@@ -90,7 +90,7 @@ describe('OpencodeGoCatalog', () => {
     })
     routeMetadataTo(metadataGateway.url)
     const fallback = vi.fn()
-    const snapshot = await new OpencodeGoCatalog(gateway.url, 60_000, fallback, () => {}).snapshot()
+    const snapshot = await new OpencodeZenCatalog(gateway.url, 60_000, fallback, () => {}).snapshot()
 
     expect(snapshot.live).toBe(source !== 'listing')
     expect(snapshot.models.size).toBe(0)
@@ -125,7 +125,7 @@ describe('OpencodeGoCatalog', () => {
       routeMetadataTo(metadataGateway.url)
       const fallback = vi.fn()
 
-      const snapshot = await new OpencodeGoCatalog(gateway.url, 60_000, fallback, () => {}).snapshot()
+      const snapshot = await new OpencodeZenCatalog(gateway.url, 60_000, fallback, () => {}).snapshot()
 
       expect(snapshot.live).toBe(source !== 'listing')
       expect(snapshot.models.size).toBe(0)
@@ -146,7 +146,7 @@ describe('OpencodeGoCatalog', () => {
     const metadataGateway = await mockGateway({ status: 200, body: metadataOnlyDocument(), responseBodyTransform })
     routeMetadataTo(metadataGateway.url)
     const fallback = vi.fn()
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, fallback, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, fallback, () => {})
     const first = await catalog.snapshot()
     expect(first.models.has(metadataOnlyId)).toBe(true)
 
@@ -165,7 +165,7 @@ describe('OpencodeGoCatalog', () => {
   it('serves the curated table intersected with the live listing', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(['deepseek-v4-flash', 'deepseek-v4.1-flash', 'brand-new-model']) })
     const omitted: string[][] = []
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, ids => omitted.push([...ids]))
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, ids => omitted.push([...ids]))
 
     const snapshot = await catalog.snapshot()
 
@@ -181,10 +181,10 @@ describe('OpencodeGoCatalog', () => {
 
   it('uses online capacities and modalities while preserving established family wire compatibility', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {})
     const snapshot = await catalog.snapshot()
     const addition = snapshot.models.get('deepseek-v4.1-flash')
-    const shipped = getBuiltinModels('opencode-go') as { id: string; api: string; contextWindow: number; maxTokens: number; input: readonly string[] }[]
+    const shipped = getBuiltinModels('opencode') as { id: string; api: string; contextWindow: number; maxTokens: number; input: readonly string[] }[]
     const sibling = shipped.find(model => model.id === 'deepseek-v4-flash')
     const visionSibling = shipped.find(model => model.id === 'deepseek-v4-flash-vision-exp')
     if (addition === undefined || sibling === undefined || visionSibling === undefined) throw new Error('expected the sibling trio')
@@ -200,7 +200,7 @@ describe('OpencodeGoCatalog', () => {
   it('does not advertise unverified models when the initial listing is unreachable', async () => {
     const gateway = await mockGateway({ status: 503, body: {} })
     const fallbacks: unknown[] = []
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, detail => fallbacks.push(detail.error), () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, detail => fallbacks.push(detail.error), () => {})
 
     const snapshot = await catalog.snapshot()
 
@@ -211,7 +211,7 @@ describe('OpencodeGoCatalog', () => {
 
   it('treats a malformed listing as unreachable', async () => {
     const gateway = await mockGateway({ status: 200, body: { unexpected: true } })
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {})
 
     const snapshot = await catalog.snapshot()
 
@@ -225,7 +225,7 @@ describe('OpencodeGoCatalog', () => {
       throw new Error('network down')
     }))
     const fallbacks: unknown[] = []
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, detail => fallbacks.push(detail.error), () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, detail => fallbacks.push(detail.error), () => {})
 
     const snapshot = await catalog.snapshot()
 
@@ -236,7 +236,7 @@ describe('OpencodeGoCatalog', () => {
 
   it('caches one resolution for the refresh interval, then refetches', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {})
 
     await catalog.snapshot()
     await catalog.snapshot()
@@ -252,7 +252,7 @@ describe('OpencodeGoCatalog', () => {
 
   it('shares one in-flight fetch between concurrent snapshots', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {})
 
     const [first, second] = await Promise.all([catalog.snapshot(), catalog.snapshot()])
 
@@ -264,7 +264,7 @@ describe('OpencodeGoCatalog', () => {
 describe('discoverCatalogModels', () => {
   it('answers the live intersection with curated capacities', async () => {
     const gateway = await mockGateway({ status: 200, body: listingBody(fullLiveListing()) })
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {})
 
     const models = await discoverCatalogModels(catalog)
 
@@ -276,7 +276,7 @@ describe('discoverCatalogModels', () => {
 
   it('fails loud when the live answer is unavailable', async () => {
     const gateway = await mockGateway({ status: 503, body: {} })
-    const catalog = new OpencodeGoCatalog(gateway.url, 60_000, () => {}, () => {})
+    const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {})
 
     await expect(discoverCatalogModels(catalog)).rejects.toMatchObject({ code: 'DISCOVERY_FAILED' })
   })

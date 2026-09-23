@@ -1,7 +1,7 @@
 /**
- * Dedicated OpenCode Go adapter plugin. Registers one `opencode-go` route
+ * Dedicated OpenCode Zen adapter plugin. Registers one `opencode-zen` route
  * whose catalog follows the gateway's live model listing and models.dev
- * metadata, and installs the `llm-opencode-go` settings section: the Web UI
+ * metadata, and installs the `llm-opencode-zen` settings section: the Web UI
  * renders it as its own settings page where the API key and every knob are
  * edited, and a change reaches the next request without a restart. The plugin
  * exists because the gateway has wire requirements a generic pi-ai route
@@ -12,23 +12,23 @@
  * 0.1.7 edits live configuration fields on the profile entry directly.
  *
  * ```yaml
- * - id: llm-opencode-go
- *   name: 'dsh-opencode-go'
+ * - id: llm-opencode-zen
+ *   name: 'dsh-opencode-zen'
  *   config:
  *     enabled: true                     # false withdraws the route; the plugin stays mounted
  *     apiKeyEnv: OPENCODE_API_KEY       # default
- *     baseURL: https://opencode.ai/zen/go/v1   # default
+ *     baseURL: https://opencode.ai/zen/v1   # default
  *     refreshMinutes: 60                # live catalog re-resolution interval
  * ```
  *
  * The credential resolves per request through the credentials seam, falling
  * back to the process environment — the same reference semantics the generic
  * pi-ai adapter uses. The route registers atomically: if another adapter
- * family already owns `opencode-go` (a profile in `llm-pi-ai`, for example),
+ * family already owns `opencode-zen` (a profile in `llm-pi-ai`, for example),
  * the refusal is logged with the reason and everything else this plugin does
  * still works.
  *
- * @module dsh-opencode-go
+ * @module dsh-opencode-zen
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -38,17 +38,16 @@ import { LlmError, assertUsableApiKey, resolveImageAttachmentAccess } from '@dee
 import type { AdapterRegistrationHandle, LlmModelDiscoveryRequest } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-settings'
-import { OpencodeGoAdapter } from './adapter.ts'
+import { OpencodeZenAdapter } from './adapter.ts'
 import {
   DISPLAY_NAME,
   PROVIDER_ID,
   discoverCatalogModels,
 } from './catalog.ts'
 import { Config, PlainConfig, readConfig, assertBaseURL } from './config.ts'
-import type { LiveConfig, OpencodeGoConfig } from './config.ts'
-import { GoUsageService } from './usage.ts'
-import { GoModelsService } from './models.ts'
-import { registerGoRemotes } from './remotes.ts'
+import type { LiveConfig, OpencodeZenConfig } from './config.ts'
+import { ZenModelsService } from './models.ts'
+import { registerZenRemotes } from './remotes.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Events {
@@ -56,24 +55,24 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-export { OpencodeGoAdapter } from './adapter.ts'
-export type { OpencodeGoAdapterOptions, OpencodeGoImageAccess } from './adapter.ts'
+export { OpencodeZenAdapter } from './adapter.ts'
+export type { OpencodeZenAdapterOptions, OpencodeZenImageAccess } from './adapter.ts'
 export {
   DEFAULT_BASE_URL,
   DISPLAY_NAME,
   PROVIDER_ID,
-  OpencodeGoCatalog,
+  OpencodeZenCatalog,
   discoverCatalogModels,
   readLiveModelIds,
 } from './catalog.ts'
 export { Config, PlainConfig, assertBaseURL } from './config.ts'
-export type { OpencodeGoConfig } from './config.ts'
+export type { OpencodeZenConfig } from './config.ts'
 
-export const name = 'llm-opencode-go'
+export const name = 'llm-opencode-zen'
 export const inject = ['llm']
 
 /** Settings namespace this plugin installs and the Web page edits. */
-export const NS = 'llm-opencode-go'
+export const NS = 'llm-opencode-zen'
 
 /**
  * Register the route, its discovery, the settings section, and their
@@ -81,13 +80,13 @@ export const NS = 'llm-opencode-go'
  * replaced by the settings section's resolved value once the settings
  * provider attaches; the adapter re-reads it at every operation.
  */
-export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
+export function apply(ctx: Context, raw?: OpencodeZenConfig | LiveConfig): void {
   const config = raw && typeof raw.enabled === 'object' ? raw as LiveConfig : Config(raw)
   const entry = readConfig(config)
   // Self-contained misconfiguration fails at load; a bad stored value instead
   // refuses the write through the section's validate hook.
   assertBaseURL(entry.baseURL)
-  let current: () => OpencodeGoConfig = () => readConfig(config)
+  let current: () => OpencodeZenConfig = () => readConfig(config)
 
   const resolveApiKey = async (): Promise<string | undefined> => {
     const ref = current().apiKeyEnv
@@ -98,22 +97,21 @@ export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
       : launchEnvironmentOf(ctx).get(ref)?.value
     if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, name, ref)
     throw new LlmError(
-      `llm-opencode-go: no credential; the profile resolves ${ref}, which is not set — store ${ref} through the`
+      `llm-opencode-zen: no credential; the profile resolves ${ref}, which is not set — store ${ref} through the`
       + ' credentials service or export it',
       'MISSING_CREDENTIAL',
     )
   }
-  registerGoRemotes(ctx)
-  ctx.plugin(GoUsageService, { baseURL: () => current().baseURL, resolveApiKey })
+  registerZenRemotes(ctx)
   const logger = {
     fallback: ({ url, error }: { url: string; error: unknown; kept: number }): void => {
-      ctx.logger.warn(`llm-opencode-go: could not refresh ${url}; using last-known model data (${String(error)})`)
+      ctx.logger.warn(`llm-opencode-zen: could not refresh ${url}; using last-known model data (${String(error)})`)
     },
     omitted: (ids: readonly string[]): void => {
-      ctx.logger.warn(`llm-opencode-go: gateway models awaiting usable online metadata: ${ids.join(', ')}`)
+      ctx.logger.warn(`llm-opencode-zen: gateway models awaiting usable online metadata: ${ids.join(', ')}`)
     },
   }
-  const adapter = new OpencodeGoAdapter({
+  const adapter = new OpencodeZenAdapter({
     config: () => current(),
     resolveApiKey,
     imageAccess: {
@@ -127,10 +125,10 @@ export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
     onFallback: logger.fallback,
     onOmitted: logger.omitted,
     onReplayDegrade: (reason) => {
-      ctx.logger.warn(`llm-opencode-go: unusable replay state on assistant history; sending provider-neutral content (${reason})`)
+      ctx.logger.warn(`llm-opencode-zen: unusable replay state on assistant history; sending provider-neutral content (${reason})`)
     },
   })
-  ctx.plugin(GoModelsService, { catalog: () => adapter.catalogOf(current()) })
+  ctx.plugin(ZenModelsService, { catalog: () => adapter.catalogOf(current()) })
   let pickerVisibility = current().showDeprecatedModels
   let registration: AdapterRegistrationHandle | undefined
   /**
@@ -154,13 +152,13 @@ export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
         // (llm-pi-ai) already owns the route. The refusal names the route;
         // discovery still registers below, and everything else about the
         // mount keeps working.
-        ctx.logger.error(`llm-opencode-go: not registering the "${PROVIDER_ID}" route (${String(error)})`)
+        ctx.logger.error(`llm-opencode-zen: not registering the "${PROVIDER_ID}" route (${String(error)})`)
       }
     } else if ((!configured || !current().enabled) && registration !== undefined) {
       registration()
       registration = undefined
       if (!current().enabled) {
-        ctx.logger.info('llm-opencode-go: disabled by configuration; the route and its models are withdrawn')
+        ctx.logger.info('llm-opencode-zen: disabled by configuration; the route and its models are withdrawn')
       }
     }
   }
@@ -178,7 +176,7 @@ export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
     void credentials.describe(credentialRef(current().apiKeyEnv))
       .then((info) => { applyRoute(info.configured) })
       .catch((error: unknown) => {
-        ctx.logger.error(`llm-opencode-go: credential describe failed; keeping the previous route state (${String(error)})`)
+        ctx.logger.error(`llm-opencode-zen: credential describe failed; keeping the previous route state (${String(error)})`)
       })
   }
   syncRoute()
@@ -186,7 +184,7 @@ export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
     if (request.provider !== PROVIDER_ID
       && !(request.baseURL ?? '').includes('opencode.ai')) {
       throw new LlmError(
-        'llm-opencode-go discovers only OpenCode zen/go endpoints; enter this provider\'s models by hand',
+        'llm-opencode-zen discovers only OpenCode zen endpoints; enter this provider\'s models by hand',
         'DISCOVERY_UNSUPPORTED',
       )
     }
@@ -244,5 +242,5 @@ export function apply(ctx: Context, raw?: OpencodeGoConfig | LiveConfig): void {
     // waiting for its next write.
     syncRoute()
   })
-  ctx.logger.info(`llm-opencode-go: route "${PROVIDER_ID}" registered as ${DISPLAY_NAME}`)
+  ctx.logger.info(`llm-opencode-zen: route "${PROVIDER_ID}" registered as ${DISPLAY_NAME}`)
 }

@@ -31,7 +31,7 @@ it.each([
     runInNewContext(readFileSync('lib/client.js', 'utf8'), {
       document, window: { __ModuleLoader__: { load: (entry: typeof registration) => { registration = entry } } },
     })
-    expect(registration?.id).toBe('dsh-opencode-go')
+    expect(registration?.id).toBe('dsh-opencode-zen')
     const client = registration!.factory(id => {
       if (!table.has(id)) throw new Error(`Unprovided module: ${id}`)
       return table.get(id)
@@ -49,8 +49,8 @@ it.each([
           ...ctx,
           remote: new Proxy(ctx.remote, {
             get(target, key: keyof typeof ctx.remote) {
-              if (key === 'opencodeGoModels' && !services.includes('remote.opencodeGoModels')) {
-                throw new Error('cannot get property "remote.opencodeGoModels" without inject')
+              if (key === 'opencodeZenModels' && !services.includes('remote.opencodeZenModels')) {
+                throw new Error('cannot get property "remote.opencodeZenModels" without inject')
               }
               return target[key]
             },
@@ -61,41 +61,41 @@ it.each([
       effect: (install: () => (() => void) | Promise<() => void>) => { effects.push(install()) },
       locale: { register: () => () => {}, bind: () => (key: string) => key },
       settingsScope: { bind: bindScope },
-      remote: { $mount: async () => () => {}, opencodeGoModels: { read: async () => ({ ok: true, value: [] }) }, $on: () => () => {}, credentials: { describe: async () => ({ ok: true, value: {} }) } },
+      remote: { $mount: async () => () => {}, opencodeZenModels: { read: async () => ({ ok: true, value: [] }) }, $on: () => () => {}, credentials: { describe: async () => ({ ok: true, value: {} }) } },
       slots: { inject: (_name: string, install: () => void) => install(), register: slots },
     }
     client.apply(ctx)
     await Promise.resolve()
     if (modern) {
-      expect(getForm).toHaveBeenCalledWith('opencode-go')
+      expect(getForm).toHaveBeenCalledWith('opencode-zen')
       expect(bindScope).not.toHaveBeenCalled()
     } else {
-      expect(bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'llm-opencode-go' }))
+      expect(bindScope).toHaveBeenCalledWith(expect.objectContaining({ namespace: 'llm-opencode-zen' }))
       expect(getForm).not.toHaveBeenCalled()
     }
-    expect(slots).toHaveBeenCalledWith(expect.objectContaining({ id: 'opencode-go', name: 'settings.section' }), expect.any(Function))
+    expect(slots).toHaveBeenCalledWith(expect.objectContaining({ id: 'opencode-zen', name: 'settings.section' }), expect.any(Function))
     const [options, Component] = slots.mock.calls[0] as unknown as [
-      { inject(): { loadModels(): void; hooks: { opencodeGo: { getSnapshot(): { models: { status: string } } } } } }, React.ComponentType<object>,
+      { inject(): { loadModels(): void; hooks: { opencodeZen: { getSnapshot(): { models: { status: string } } } } } }, React.ComponentType<object>,
     ]
     const face = options.inject()
     face.loadModels()
-    await vi.waitFor(() => expect(face.hooks.opencodeGo.getSnapshot().models.status).toBe('ready'))
+    await vi.waitFor(() => expect(face.hooks.opencodeZen.getSnapshot().models.status).toBe('ready'))
     const markup = renderToStaticMarkup(React.createElement(Component, {
-      ...face, useOpencodeGo: () => face.hooks.opencodeGo.getSnapshot(),
+      ...face, useOpencodeZen: () => face.hooks.opencodeZen.getSnapshot(),
     }))
     expect(markup).toContain('type="password"')
     const preview = document.createElement('div')
     preview.innerHTML = markup
     document.body.appendChild(preview)
     try {
-      const advanced = preview.querySelector('[aria-controls="opencode-go-advanced"]')!
+      const advanced = preview.querySelector('[aria-controls="opencode-zen-advanced"]')!
       // The distributed CSS mapping must retain inherited disclosure styles.
       expect(getComputedStyle(advanced).display).toBe('flex')
       expect(getComputedStyle(advanced).cursor).toBe('pointer')
     } finally {
       preview.remove()
     }
-    expect(document.querySelector('style[data-plugin="dsh-opencode-go"]')).not.toBeNull()
+    expect(document.querySelector('style[data-plugin="dsh-opencode-zen"]')).not.toBeNull()
     for (const dispose of effects.reverse()) (await dispose)()
     expect(sharedForm.listenerCount()).toBe(0)
   } finally {

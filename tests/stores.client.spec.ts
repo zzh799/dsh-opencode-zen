@@ -1,5 +1,5 @@
 /**
- * The OpenCode Go settings page's staged form and controller: what a draft
+ * The OpenCode Zen settings page's staged form and controller: what a draft
  * shows before it is written, which wire call a save reaches, how credential
  * state is probed and written outside the section, and what happens to drafts
  * the Host did not accept.
@@ -17,8 +17,8 @@ import {
   type FormShell,
 } from '../src/client/staged-form.ts'
 import {
-  OpencodeGoSectionController,
-  type OpencodeGoSettings,
+  OpencodeZenSectionController,
+  type OpencodeZenSettings,
 } from '../src/client/section-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
@@ -101,7 +101,7 @@ const specs = [textField('baseURL'), numberField('refreshMinutes')]
 
 describe('StagedForm', () => {
   it('shows the effective value and the override state without staged edits', () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const form = new StagedForm(host.scope as never, specs)
     host.publish({
       status: 'ready',
@@ -116,7 +116,7 @@ describe('StagedForm', () => {
   })
 
   it('stages edits and previews override and invalid states before any write', () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     acceptWrites(host)
     const form = new StagedForm(host.scope as never, specs)
     host.publish({ status: 'ready', writable: true, value: { refreshMinutes: 60 }, user: {} })
@@ -136,7 +136,7 @@ describe('StagedForm', () => {
   })
 
   it('skips saving a draft that equals the stored value, and refuses invalid plans', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     acceptWrites(host)
     const form = new StagedForm(host.scope as never, specs)
     host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://gateway.test/v1' }, user: {} })
@@ -155,7 +155,7 @@ describe('StagedForm', () => {
   })
 
   it('writes staged edits on save, clears accepted drafts, and re-reads from the Host', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     acceptWrites(host)
     const form = new StagedForm(host.scope as never, specs)
     host.publish({ status: 'ready', writable: true, value: { refreshMinutes: 60 }, user: {} })
@@ -170,7 +170,7 @@ describe('StagedForm', () => {
   })
 
   it('keeps drafts and reports failure when the Host does not hold what was staged', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const form = new StagedForm(host.scope as never, specs)
     // The Host never publishes the write back: the read-back reports failure.
     setSpy(host).mockImplementation(() => Promise.resolve())
@@ -185,7 +185,7 @@ describe('StagedForm', () => {
   })
 
   it('does not start a second save while one is in flight and drops empty discards', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const form = new StagedForm(host.scope as never, specs)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     form.actions().discard()
@@ -202,7 +202,7 @@ describe('StagedForm', () => {
   })
 
   it('clears a stored field only when the user layer carries it', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     acceptWrites(host)
     const form = new StagedForm(host.scope as never, specs)
     host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://x.test/v1' }, user: { baseURL: 'https://x.test/v1' } })
@@ -219,7 +219,7 @@ describe('StagedForm', () => {
   })
 
   it('previews a staged clear and plans a parse-clear write', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     acceptWrites(host)
     const form = new StagedForm(host.scope as never, specs)
     host.publish({
@@ -245,23 +245,23 @@ describe('StagedForm', () => {
   })
 
   it('plans nothing for a secret staged blank, keeping the stored key', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(true)
-    const controller = new OpencodeGoSectionController(host.scope, credentials.ctx)
+    const controller = new OpencodeZenSectionController(host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
     face.edit('apiKey', '   ')
     face.save()
-    await vi.waitFor(() => { expect(face.hooks.opencodeGo.getSnapshot().saving).toBe(false) })
+    await vi.waitFor(() => { expect(face.hooks.opencodeZen.getSnapshot().saving).toBe(false) })
 
     expect(credentials.set).not.toHaveBeenCalled()
     // A blank secret plans nothing, so the form is clean without discarding.
-    expect(face.hooks.opencodeGo.getSnapshot().dirty).toBe(false)
+    expect(face.hooks.opencodeZen.getSnapshot().dirty).toBe(false)
   })
 
   it('reports an unready namespace and refuses unknown fields loudly', () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const form = new StagedForm(host.scope as never, specs)
 
     expect(form.shell().available).toBe(false)
@@ -286,7 +286,7 @@ describe('jsonField', () => {
   })
 
   it('stages a per-model map through the shared form', () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     acceptWrites(host)
     const form = new StagedForm(host.scope as never, [...specs, spec])
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
@@ -302,7 +302,7 @@ describe('jsonField', () => {
   })
 
   it('accepts a structured settings write when the Host returns a cloned value', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const form = new StagedForm(host.scope as never, [...specs, spec])
     const current = () => host.scope.getSnapshot()
     setSpy(host).mockImplementation(async (field, value) => {
@@ -320,8 +320,8 @@ describe('jsonField', () => {
   })
 })
 
-describe('OpencodeGoSectionController', () => {
-  const ready = (value: OpencodeGoSettings, user: Record<string, unknown> = {}) => ({
+describe('OpencodeZenSectionController', () => {
+  const ready = (value: OpencodeZenSettings, user: Record<string, unknown> = {}) => ({
     status: 'ready' as const,
     writable: true,
     value,
@@ -329,10 +329,10 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('reads the credential state for the reference the section names', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(true, 'MY_OPENCODE_KEY')
-    const controller = new OpencodeGoSectionController(host.scope, credentials.ctx)
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const controller = new OpencodeZenSectionController(host.scope, credentials.ctx)
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
 
     host.publish(ready({ baseURL: 'https://gateway.test/v1', apiKeyEnv: 'MY_OPENCODE_KEY' }))
@@ -348,9 +348,9 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('defaults the credential reference when the section names none', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(false)
-    new OpencodeGoSectionController(host.scope, credentials.ctx)
+    new OpencodeZenSectionController(host.scope, credentials.ctx)
     host.publish(ready({}))
 
     await vi.waitFor(() => {
@@ -359,11 +359,11 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('resets the credential answer when the section starts naming another reference', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(true, 'FIRST_REF')
-    const controller = new OpencodeGoSectionController(host.scope, credentials.ctx)
+    const controller = new OpencodeZenSectionController(host.scope, credentials.ctx)
     host.publish(ready({ apiKeyEnv: 'FIRST_REF' }))
-    await vi.waitFor(() => { expect(controller.inject().hooks.opencodeGo.getSnapshot().apiKeyConfigured).toBe(true) })
+    await vi.waitFor(() => { expect(controller.inject().hooks.opencodeZen.getSnapshot().apiKeyConfigured).toBe(true) })
 
     credentials.describe.mockImplementation(() => Promise.resolve({
       ok: true as const,
@@ -372,18 +372,18 @@ describe('OpencodeGoSectionController', () => {
     host.publish(ready({ apiKeyEnv: 'SECOND_REF' }))
 
     await vi.waitFor(() => {
-      expect(controller.inject().hooks.opencodeGo.getSnapshot().apiKeyConfigured).toBe(false)
+      expect(controller.inject().hooks.opencodeZen.getSnapshot().apiKeyConfigured).toBe(false)
     })
     expect(credentials.describe).toHaveBeenCalledWith(['SECOND_REF'])
   })
 
   it('drops a describe response that failed or drifted to another reference', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(true)
-    const controller = new OpencodeGoSectionController(host.scope, credentials.ctx)
+    const controller = new OpencodeZenSectionController(host.scope, credentials.ctx)
     host.publish(ready({}))
-    await vi.waitFor(() => { expect(controller.inject().hooks.opencodeGo.getSnapshot().apiKeyConfigured).toBe(true) })
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    await vi.waitFor(() => { expect(controller.inject().hooks.opencodeZen.getSnapshot().apiKeyConfigured).toBe(true) })
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
 
     credentials.describe.mockImplementation(() => Promise.resolve({
       ok: false as const,
@@ -407,9 +407,9 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('refreshes the credential badge only for the reference it watches', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(true)
-    const controller = new OpencodeGoSectionController(host.scope, credentials.ctx)
+    const controller = new OpencodeZenSectionController(host.scope, credentials.ctx)
     host.publish(ready({}))
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
 
@@ -422,14 +422,14 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('writes the staged key through the credentials domain, never the settings section', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const credentials = credentialsApi(false)
-    const controller = new OpencodeGoSectionController(host.scope, credentials.ctx)
+    const controller = new OpencodeZenSectionController(host.scope, credentials.ctx)
     host.publish(ready({}))
     const face = controller.inject()
 
     face.edit('apiKey', ' opencode-secret ')
-    expect(face.hooks.opencodeGo.getSnapshot().dirty).toBe(true)
+    expect(face.hooks.opencodeZen.getSnapshot().dirty).toBe(true)
     expect(credentials.set).not.toHaveBeenCalled()
 
     credentials.describe.mockImplementation(() => Promise.resolve({
@@ -442,25 +442,25 @@ describe('OpencodeGoSectionController', () => {
     expect(credentials.set).toHaveBeenCalledWith('OPENCODE_API_KEY', 'opencode-secret')
     expect(host.set).not.toHaveBeenCalled()
     await vi.waitFor(() => {
-      expect(face.hooks.opencodeGo.getSnapshot()).toMatchObject({ dirty: false, apiKeyConfigured: true })
+      expect(face.hooks.opencodeZen.getSnapshot()).toMatchObject({ dirty: false, apiKeyConfigured: true })
     })
   })
 
   it('reads the gateway listing for this adapter and previews its model names', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const discoverModels = vi.fn(() => Promise.resolve(discovered([
       { id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash' },
       { id: 'deepseek-v4-flash' },
       { id: 'kimi-k2' }, { id: 'glm-5' }, { id: 'qwen3-max' }, { id: 'grok-5' }, { id: 'gpt-6' },
     ])))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels))
     host.publish(ready({}))
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
 
     expect(state().models).toEqual({ status: 'idle' })
     controller.loadModels()
     expect(state().models).toEqual({ status: 'loading' })
-    expect(discoverModels).toHaveBeenCalledWith('llm-opencode-go', { provider: 'opencode-go' })
+    expect(discoverModels).toHaveBeenCalledWith('llm-opencode-zen', { provider: 'opencode-zen' })
 
     await vi.waitFor(() => { expect(state().models.status).toBe('ready') })
     // Every model is visible, including those beyond the former six-name preview.
@@ -477,17 +477,17 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('publishes model entries and the current per-model draft for the capacity editor', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const discoverModels = vi.fn(() => Promise.resolve(discovered([
       { id: 'mimo-v2.6-flash', name: 'Mimo V2.6 Flash', contextWindow: 262_144, maxTokens: 32_768 },
     ])))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels))
     host.publish(ready({ modelLimits: { 'mimo-v2.6-flash': { contextWindow: 131_072 } } }, {
       modelLimits: { 'mimo-v2.6-flash': { contextWindow: 131_072 } },
     }))
 
     controller.loadModels()
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
     await vi.waitFor(() => { expect(state().models.status).toBe('ready') })
 
     expect(state().models).toMatchObject({
@@ -500,29 +500,29 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('reports a refused listing with the Host diagnostic', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const discoverModels = vi.fn(() => Promise.resolve({
       ok: false as const,
       error: new RemoteError('llm/model-discovery-rejected', 'the live model listing is unreachable', {
-        settingsNs: 'llm-opencode-go',
+        settingsNs: 'llm-opencode-zen',
       }),
     }))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels))
     host.publish(ready({}))
 
     controller.loadModels()
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
     await vi.waitFor(() => {
       expect(state().models).toEqual({ status: 'failed', message: 'the live model listing is unreachable' })
     })
   })
 
   it('reports a rejected listing read as a failure instead of loading forever', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     const discoverModels = vi.fn(() => Promise.reject(new Error('the gateway connection closed')))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels))
     host.publish(ready({}))
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
 
     controller.loadModels()
     expect(state().models).toEqual({ status: 'loading' })
@@ -532,29 +532,29 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('names a non-Error rejection in the failure it reports', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error arm is the case under test.
     const discoverModels = vi.fn(() => Promise.reject('gateway offline'))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels))
     host.publish(ready({}))
 
     controller.loadModels()
     await vi.waitFor(() => {
-      expect(controller.inject().hooks.opencodeGo.getSnapshot().models)
+      expect(controller.inject().hooks.opencodeZen.getSnapshot().models)
         .toEqual({ status: 'failed', message: 'gateway offline' })
     })
   })
 
   it('drops a rejected listing answer a later read already replaced', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     let rejectFirst!: (reason: unknown) => void
     let settleSecond!: (answer: unknown) => void
     const discoverModels = vi.fn()
       .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject }))
       .mockImplementationOnce(() => new Promise((resolve) => { settleSecond = resolve }))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels as never))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels as never))
     host.publish(ready({}))
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
 
     controller.loadModels()
     controller.loadModels()
@@ -567,15 +567,15 @@ describe('OpencodeGoSectionController', () => {
   })
 
   it('drops a listing answer a later read already replaced', async () => {
-    const host = stubSettingsScope<OpencodeGoSettings>()
+    const host = stubSettingsScope<OpencodeZenSettings>()
     let settleFirst!: (answer: unknown) => void
     let settleSecond!: (answer: unknown) => void
     const discoverModels = vi.fn()
       .mockImplementationOnce(() => new Promise((resolve) => { settleFirst = resolve }))
       .mockImplementationOnce(() => new Promise((resolve) => { settleSecond = resolve }))
-    const controller = new OpencodeGoSectionController(host.scope, pageCtx(discoverModels as never))
+    const controller = new OpencodeZenSectionController(host.scope, pageCtx(discoverModels as never))
     host.publish(ready({}))
-    const state = () => controller.inject().hooks.opencodeGo.getSnapshot()
+    const state = () => controller.inject().hooks.opencodeZen.getSnapshot()
 
     controller.loadModels()
     controller.loadModels()

@@ -1,22 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import { isNewModel, sortModels, type GoModel } from '../models-contract.ts'
-import type { OpencodeGoModelLimit, OpencodeGoModelLimits, OpencodeGoModels } from './section-controller.ts'
+import { isNewModel, sortModels, type ZenModel } from '../models-contract.ts'
+import type { OpencodeZenModelLimit, OpencodeZenModelLimits, OpencodeZenModels } from './section-controller.ts'
 import type { en } from './locales.ts'
 import css from './Section.module.css'
 
 type Translate = (key: keyof typeof en, params?: Record<string, unknown>) => string
-export function hasCapacityOverride(limit: OpencodeGoModelLimit | null | undefined): boolean {
+export function hasCapacityOverride(limit: OpencodeZenModelLimit | null | undefined): boolean {
   return limit?.contextWindow != null || limit?.maxTokens != null
 }
 
 /** One gateway-backed list and its selected model's staged capacity settings. */
 export function ModelEditor({ models, draft, t, disabled, onEdit }: {
-  models: OpencodeGoModels
-  draft: OpencodeGoModelLimits
+  models: OpencodeZenModels
+  draft: OpencodeZenModelLimits
   t: Translate
   disabled: boolean
-  onEdit: (next: OpencodeGoModelLimits) => void
+  onEdit: (next: OpencodeZenModelLimits) => void
 }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
@@ -40,18 +40,18 @@ export function ModelEditor({ models, draft, t, disabled, onEdit }: {
     ['custom', 'filterCustom', customized],
     ['deprecated', 'filterDeprecated', all.filter(entry => entry.deprecated).length],
   ] as const
-  const write = (id: string, field: keyof OpencodeGoModelLimit, value: number | undefined): void => {
+  const write = (id: string, field: keyof OpencodeZenModelLimit, value: number | undefined): void => {
     const current = draft[id] === null ? { contextWindow: null, maxTokens: null } : draft[id] ?? {}
     onEdit({ ...draft, [id]: { ...current, [field]: value ?? null } })
   }
-  const badges = (entry: GoModel) => <>
+  const badges = (entry: ZenModel) => <>
     {isNewModel(entry, now) ? <span className={css.newBadge} title={t('newHint')}>NEW</span> : null}
     {entry.deprecated ? <Tag tone="warning">{t('deprecatedBadge')}</Tag> : null}
   </>
   return (
     <div className={css.limitsEditor}>
-      <label className={css.visuallyHidden} htmlFor="opencode-go-model-filter">{t('limitsFilterLabel')}</label>
-      <input id="opencode-go-model-filter" className={css.input} type="search" autoComplete="off"
+      <label className={css.visuallyHidden} htmlFor="opencode-zen-model-filter">{t('limitsFilterLabel')}</label>
+      <input id="opencode-zen-model-filter" className={css.input} type="search" autoComplete="off"
         placeholder={t('limitsFilterPlaceholder')} value={query} onChange={event => { setQuery(event.target.value) }} />
       <div className={css.filters} role="group" aria-label={t('filterLabel')}>
         {filters.map(([key, label, count]) => <button key={key} type="button" className={css.filter}
@@ -93,14 +93,14 @@ export function ModelEditor({ models, draft, t, disabled, onEdit }: {
 }
 
 function Capacity({ model, field, limit, disabled, t, onChange }: {
-  model: GoModel
-  field: keyof OpencodeGoModelLimit
-  limit: OpencodeGoModelLimit | null | undefined
+  model: ZenModel
+  field: keyof OpencodeZenModelLimit
+  limit: OpencodeZenModelLimit | null | undefined
   disabled: boolean
   t: Translate
-  onChange: (id: string, field: keyof OpencodeGoModelLimit, value: number | undefined) => void
+  onChange: (id: string, field: keyof OpencodeZenModelLimit, value: number | undefined) => void
 }) {
-  const id = `opencode-go-${field}-${encodeURIComponent(model.id)}`
+  const id = `opencode-zen-${field}-${encodeURIComponent(model.id)}`
   const defaultValue = model[field]
   return <div className={css.field}>
     <label className={css.label} htmlFor={id}>{t(field === 'contextWindow' ? 'limitsContext' : 'limitsOutput')}</label>

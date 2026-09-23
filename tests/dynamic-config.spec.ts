@@ -1,5 +1,5 @@
 /**
- * Settings-backed configuration: the `llm-opencode-go` section overrides the
+ * Settings-backed configuration: the `llm-opencode-zen` section overrides the
  * cordis.yml entry field by field, a change reaches the next request without
  * a restart, and a refused write leaves the document untouched.
  */
@@ -19,7 +19,7 @@ import { configOf } from './config-of.ts'
 
 import { metadataDocument, modelMetadata, MODELS_METADATA_URL } from './support/model-metadata.ts'
 
-const NS = 'llm-opencode-go'
+const NS = 'llm-opencode-zen'
 
 const cleanups: Array<() => Promise<void>> = []
 
@@ -30,7 +30,7 @@ afterEach(async () => {
 })
 
 async function home(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'dsh-opencode-go-dynamic-'))
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-opencode-zen-dynamic-'))
   cleanups.push(() => rm(dir, { recursive: true, force: true }))
   return dir
 }
@@ -50,7 +50,7 @@ interface BootOptions {
 /** The plugin as a mountable cordis definition: `apply`'s named exports do not ride the function value. */
 function asPlugin(config?: unknown): { name: string; inject: string[]; apply: (ctx: Context) => void } {
   return {
-    name: 'llm-opencode-go-test',
+    name: 'llm-opencode-zen-test',
     inject: ['llm'],
     apply: (ctx: Context) => {
       apply(ctx, config as never)
@@ -75,9 +75,9 @@ async function streamOnce(ctx: Context): Promise<void> {
   // Seam-backed registration settles asynchronously once the credential
   // provider answers; a request before that would race the route's arrival.
   await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-    .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+    .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
   for await (const _chunk of ctx.llm.stream({
-    provider: 'opencode-go',
+    provider: 'opencode-zen',
     model: 'deepseek-v4.1-flash',
     messages: [],
   })) { /* drain */ }
@@ -152,21 +152,21 @@ describe('settings-backed configuration', () => {
       baseURL: gateway.url,
     })
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-      .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
 
-    const advertised = (await ctx.llm.resolveModelInfo('opencode-go', 'deepseek-v4.1-flash')).context?.contextWindow
+    const advertised = (await ctx.llm.resolveModelInfo('opencode-zen', 'deepseek-v4.1-flash')).context?.contextWindow
     expect(advertised).toBeGreaterThan(0)
 
     await ctx.settings.update(NS, {
       modelLimits: { 'deepseek-v4.1-flash': { contextWindow: 123_456, maxTokens: 5_432 } },
     })
-    expect((await ctx.llm.resolveModelInfo('opencode-go', 'deepseek-v4.1-flash')).context?.contextWindow)
+    expect((await ctx.llm.resolveModelInfo('opencode-zen', 'deepseek-v4.1-flash')).context?.contextWindow)
       .toBe(123_456)
 
     // `update` is merge-only, so use the documented replace path to remove the
     // user-layer field and let the catalog value re-inherit.
     await ctx.settings.replace(NS, {})
-    expect((await ctx.llm.resolveModelInfo('opencode-go', 'deepseek-v4.1-flash')).context?.contextWindow)
+    expect((await ctx.llm.resolveModelInfo('opencode-zen', 'deepseek-v4.1-flash')).context?.contextWindow)
       .toBe(advertised)
   })
 
@@ -192,7 +192,7 @@ describe('settings-backed configuration', () => {
     // Storing it again brings the route back without a restart.
     await ctx.credentials.set(credentialRef('OPENCODE_API_KEY'), 'test-key')
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-      .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
     await streamOnce(ctx)
     expect(gateway.paths.filter(path => path === '/chat/completions')).toHaveLength(2)
   })
@@ -204,7 +204,7 @@ describe('settings-backed configuration', () => {
       describe: () => Promise.reject(new Error('describe exploded')),
       resolve: () => Promise.resolve({ value: 'k', source: 'test' }),
     } as never)
-    apply(ctx, configOf('https://opencode.ai/zen/go/v1'))
+    apply(ctx, configOf('https://opencode.ai/zen/v1'))
 
     // The refusal is logged and the route simply stays unregistered.
     await new Promise(resolve => setTimeout(resolve, 50))
@@ -224,11 +224,11 @@ describe('settings-backed configuration', () => {
     } as never)
     apply(ctx, configOf(gateway.url))
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-      .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
 
     const chunks: Array<{ type: string; reason?: unknown }> = []
     for await (const chunk of ctx.llm.stream({
-      provider: 'opencode-go',
+      provider: 'opencode-zen',
       model: 'deepseek-v4.1-flash',
       messages: [],
     })) chunks.push(chunk)
@@ -247,15 +247,15 @@ describe('settings-backed configuration', () => {
       : original(input, init))
     const gateway = await mockGateway({ status: 200, body: listingBody(['old']) })
     const ctx = await boot({ settingsYaml: '', credentials: { OPENCODE_API_KEY: 'test-key' }, baseURL: gateway.url })
-    await expect.poll(() => ctx.llm.listProviders()).toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
-    expect(await ctx.llm.listModels('opencode-go')).toEqual([])
+    await expect.poll(() => ctx.llm.listProviders()).toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
+    expect(await ctx.llm.listModels('opencode-zen')).toEqual([])
     const notify = vi.fn()
     ctx.on('llm/adapters-updated', notify)
     await ctx.settings.update(NS, { showDeprecatedModels: true })
     expect(notify).toHaveBeenCalled()
-    expect((await ctx.llm.listModels('opencode-go')).map(m => m.id)).toEqual(['old'])
+    expect((await ctx.llm.listModels('opencode-zen')).map(m => m.id)).toEqual(['old'])
     await ctx.settings.update(NS, { showDeprecatedModels: false })
-    expect(await ctx.llm.listModels('opencode-go')).toEqual([])
+    expect(await ctx.llm.listModels('opencode-zen')).toEqual([])
   })
 
   it('withdraws the route and its models the moment the switch goes off, and serves again on', async () => {
@@ -268,7 +268,7 @@ describe('settings-backed configuration', () => {
       baseURL: gateway.url,
     })
     await streamOnce(ctx)
-    expect((await ctx.llm.listModels('opencode-go')).map(model => model.id)).toContain('deepseek-v4.1-flash')
+    expect((await ctx.llm.listModels('opencode-zen')).map(model => model.id)).toContain('deepseek-v4.1-flash')
 
     // The key stays configured throughout: only the switch decides.
     await ctx.settings.update(NS, { enabled: false })
@@ -277,7 +277,7 @@ describe('settings-backed configuration', () => {
     // nothing further reaches the gateway while it is off.
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 }).toEqual([])
     // The route itself is gone, so even a direct catalog read cannot find it.
-    await expect(ctx.llm.listModels('opencode-go')).rejects.toThrow()
+    await expect(ctx.llm.listModels('opencode-zen')).rejects.toThrow()
     expect(gateway.paths.filter(path => path === '/chat/completions')).toHaveLength(1)
 
     // The page that owns the switch keeps working while the route is gone.
@@ -286,7 +286,7 @@ describe('settings-backed configuration', () => {
 
     await ctx.settings.update(NS, { enabled: true })
     await expect.poll(() => ctx.llm.listProviders(), { timeout: 10_000 })
-      .toContainEqual({ id: 'opencode-go', name: 'OpenCode Go' })
+      .toContainEqual({ id: 'opencode-zen', name: 'OpenCode Zen' })
     await streamOnce(ctx)
     expect(gateway.paths.filter(path => path === '/chat/completions')).toHaveLength(2)
   })
