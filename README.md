@@ -45,7 +45,7 @@
 ### 命令行安装（备选）
 
 ```sh
-dsh plugin --profile web add dsh-opencode-zen@0.3.0
+dsh plugin --profile web add dsh-opencode-zen@0.3.5
 ```
 
 安装后启动或重启 `dsh web`，然后：
@@ -59,7 +59,7 @@ dsh plugin --profile web add dsh-opencode-zen@0.3.0
 安装到 Headless profile：
 
 ```sh
-dsh plugin --profile headless add dsh-opencode-zen@0.3.0
+dsh plugin --profile headless add dsh-opencode-zen@0.3.5
 ```
 
 将以下内容保存为 `headless.patch.yml`，选择默认模型：
@@ -86,7 +86,7 @@ dsh --profile headless --patch ./headless.patch.yml "你好"
 ```sh
 npm ci
 npm pack
-dsh plugin --profile web add ./dsh-opencode-zen-0.3.0.tgz
+dsh plugin --profile web add ./dsh-opencode-zen-0.3.5.tgz
 ```
 
 开发依赖包含多代 DSH 的真实测试包，它们的 peer 依赖互相冲突，仓库根目录的 `.npmrc` 已默认启用 `legacy-peer-deps`，无需再手动传参（pnpm 从 git 安装本插件时执行的裸 `npm install` 也依赖这份配置）。Headless 用户将 `web` 换成 `headless`。

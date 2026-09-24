@@ -44,7 +44,7 @@ If your DSH version does not have an **Add plugin** entry, use the command-line 
 ### Command-line installation (alternative)
 
 ```sh
-dsh plugin --profile web add dsh-opencode-zen@0.3.0
+dsh plugin --profile web add dsh-opencode-zen@0.3.5
 ```
 
 Start or restart `dsh web`, then:
@@ -58,7 +58,7 @@ Start or restart `dsh web`, then:
 Install the plugin into the Headless profile:
 
 ```sh
-dsh plugin --profile headless add dsh-opencode-zen@0.3.0
+dsh plugin --profile headless add dsh-opencode-zen@0.3.5
 ```
 
 Save the following as `headless.patch.yml` to select a default model:
@@ -85,7 +85,7 @@ To build from source and install a local package:
 ```sh
 npm ci
 npm pack
-dsh plugin --profile web add ./dsh-opencode-zen-0.3.0.tgz
+dsh plugin --profile web add ./dsh-opencode-zen-0.3.5.tgz
 ```
 
 The development dependencies include real test packages from multiple DSH generations whose peer dependencies conflict with each other. The `.npmrc` at the repository root enables `legacy-peer-deps` by default, so no extra flag is needed (the bare `npm install` that pnpm runs when installing this plugin from git also relies on it). For Headless, replace `web` with `headless`.

@@ -1,6 +1,6 @@
 {
   "name": "dsh-opencode-zen",
-  "version": "0.3.0",
+  "version": "0.3.5",
   "description": "OpenCode gateway provider for DeepSeek Harness: the Zen pay-as-you-go plan and the Go subscription, with their settings UI",
   "type": "module",
   "license": "MIT",
