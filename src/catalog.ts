@@ -7,7 +7,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-llm'
-import { MODEL_METADATA_URL, modelBaseURL, readModelMetadata } from './model-metadata.ts'
+import { MODEL_METADATA_URL, calculatePricePer100m, modelBaseURL, readModelMetadata } from './model-metadata.ts'
 import { sortModels, type ZenModel } from './models-contract.ts'
 import type { ModelMetadata } from './model-metadata.ts'
 import { readJsonResponse } from './json-response.ts'
@@ -212,8 +212,23 @@ function describeCatalog(snapshot: CatalogSnapshot): readonly LlmDiscoveredModel
 }
 
 /** Settings retain deprecated gateway entries regardless of picker visibility. */
-export async function discoverSettingsModels(catalog: OpencodeZenCatalog): Promise<readonly ZenModel[]> {
+export async function discoverSettingsModels(catalog: OpencodeZenCatalog, includePrice = false): Promise<readonly ZenModel[]> {
   const snapshot = await catalog.snapshot(true)
   if (!snapshot.live) throw new LlmError('llm-opencode-zen: the live model listing is unreachable; try again later', 'DISCOVERY_FAILED')
-  return sortModels(describeCatalog(snapshot).map(model => ({ ...model, ...snapshot.details.get(model.id) })))
+  return sortModels(describeCatalog(snapshot).map(model => {
+    const details = snapshot.details.get(model.id)
+    const source = snapshot.models.get(model.id)
+    const lifecycle = details === undefined ? {} : {
+      ...(details.deprecated === undefined ? {} : { deprecated: details.deprecated }),
+      ...(details.releaseDate === undefined ? {} : { releaseDate: details.releaseDate }),
+    }
+    const price = includePrice
+      ? source === undefined ? details?.pricePer100m : calculatePricePer100m(source.cost)
+      : undefined
+    return {
+      ...model,
+      ...lifecycle,
+      ...(price === undefined ? {} : { pricePer100m: price }),
+    }
+  }))
 }

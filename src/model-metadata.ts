@@ -1,14 +1,14 @@
 /** Convert OpenCode's online models.dev metadata into the SDK's three wire protocols. */
 import type { Api, Model, ModelCost, ModelThinkingLevel, ThinkingLevelMap } from '@earendil-works/pi-ai'
 
-import { validReleaseDate, type ZenModel } from './models-contract.ts'
+import { validReleaseDate, type ZenModel, type ZenModelPrice } from './models-contract.ts'
 import { ZEN_ROUTE, type RouteDescriptor } from './providers.ts'
 
 export const MODEL_METADATA_URL = 'https://models.dev/api.json'
 
 export interface ModelMetadata {
   readonly models: ReadonlyMap<string, Model<Api>>
-  readonly details: ReadonlyMap<string, Pick<ZenModel, 'deprecated' | 'releaseDate'>>
+  readonly details: ReadonlyMap<string, Pick<ZenModel, 'deprecated' | 'releaseDate' | 'pricePer100m'>>
   readonly errors: ReadonlyMap<string, string>
 }
 
@@ -24,6 +24,16 @@ function positiveInteger(value: unknown, field: string): number {
   return value
 }
 
+/**
+ * Rates are source USD per million tokens; the coefficients convert the weighted mix to 100M tokens.
+ * The formula has one rate set, so use the model's base tier rather than inventing a price for every context tier.
+ */
+export function calculatePricePer100m(cost: Pick<ModelCost, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): ZenModelPrice {
+  const source = 99.86 * (0.97 * cost.cacheRead + 0.03 * (cost.input + 0.30 * cost.cacheWrite))
+    + 0.143 * cost.output
+  return { source, actual: source * 0.167 }
+}
+
 function rates(value: unknown): ModelCost {
   const cost = record(value)
   const rate = (key: string): number => {
@@ -31,6 +41,15 @@ function rates(value: unknown): ModelCost {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
   }
   return { input: rate('input'), output: rate('output'), cacheRead: rate('cache_read'), cacheWrite: rate('cache_write') }
+}
+
+function priceFromMetadata(value: unknown): ZenModelPrice | undefined {
+  const cost = record(value)
+  const hasRate = ['input', 'output', 'cache_read', 'cache_write'].some(key => {
+    const rate = cost[key]
+    return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0
+  })
+  return hasRate ? calculatePricePer100m(rates(value)) : undefined
 }
 
 const LEVELS: readonly ModelThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -89,13 +108,14 @@ export function readModelMetadata(
   const entries = record(provider.models)
   const models = new Map<string, Model<Api>>()
   const errors = new Map<string, string>()
-  const details = new Map<string, Pick<ZenModel, 'deprecated' | 'releaseDate'>>()
+  const details = new Map<string, Pick<ZenModel, 'deprecated' | 'releaseDate' | 'pricePer100m'>>()
   for (const [id, value] of Object.entries(entries)) {
-    const data = record(value)
-    details.set(id, { deprecated: data.status === 'deprecated',
-      ...(validReleaseDate(data.release_date) ? { releaseDate: data.release_date } : {}) })
+    const metadata = record(value)
+    const price = priceFromMetadata(metadata.cost)
+    details.set(id, { deprecated: metadata.status === 'deprecated',
+      ...(validReleaseDate(metadata.release_date) ? { releaseDate: metadata.release_date } : {}),
+      ...(price === undefined ? {} : { pricePer100m: price }) })
     try {
-      const metadata = record(value)
       const npm = record(metadata.provider).npm ?? provider.npm
       const api = npm === '@ai-sdk/anthropic' ? 'anthropic-messages'
         : npm === '@ai-sdk/openai' ? 'openai-responses'

@@ -240,8 +240,8 @@ export interface OpencodeZenSectionFace extends FormActions {
    * pickers rather than leaving an empty one there. Saved with the rest.
    */
   clearModelChecks: () => void
-  /** Read the Go gateway's model listing, now or again after a failure. */
-  loadGoModels: () => void
+  /** Read the Go gateway's model listing; `force` also refreshes its public monthly estimates. */
+  loadGoModels: (force?: boolean) => void
   /**
    * Stage one model's membership in the Go picker whitelist.
    * @param id - the gateway model id the checkbox names.
@@ -262,8 +262,8 @@ export interface OpencodeZenSectionFace extends FormActions {
 export interface OpencodeZenSources {
   /** The Zen plan's model listing. */
   models: () => Promise<RemoteResult<readonly ZenModel[]>>
-  /** The Go plan's model listing. */
-  goModels: () => Promise<RemoteResult<readonly ZenModel[]>>
+  /** The Go plan's model listing and, when forced, its public monthly estimates. */
+  goModels: (force: boolean) => Promise<RemoteResult<readonly ZenModel[]>>
   /** One probe of the Go plan's quota. */
   usage: () => Promise<RemoteResult<GoUsageProbe>>
 }
@@ -554,11 +554,11 @@ export class OpencodeZenSectionController {
   }
 
   /** The Go plan's counterpart of {@link loadModels}. */
-  loadGoModels(): void {
-    this.readListing('go')
+  loadGoModels(force = false): void {
+    this.readListing('go', force)
   }
 
-  private readListing(plan: Plan): void {
+  private readListing(plan: Plan, force = false): void {
     const request = ++this.listingRequests[plan]
     this.listings[plan] = { status: 'loading' }
     this.store.set(this.projection())
@@ -569,7 +569,7 @@ export class OpencodeZenSectionController {
     // rejection the panel can report instead of escaping this method.
     let pending: Promise<RemoteResult<readonly ZenModel[]>>
     try {
-      pending = plan === 'go' ? this.sources.goModels() : this.sources.models()
+      pending = plan === 'go' ? this.sources.goModels(force) : this.sources.models()
     } catch (error: unknown) {
       pending = Promise.reject(error)
     }
@@ -689,7 +689,7 @@ export class OpencodeZenSectionController {
       loadModels: () => { this.loadModels() },
       setModelChecked: (id, checked) => { this.setModelChecked(id, checked) },
       clearModelChecks: () => { this.clearModelChecks() },
-      loadGoModels: () => { this.loadGoModels() },
+      loadGoModels: (force) => { this.loadGoModels(force) },
       setGoModelChecked: (id, checked) => { this.setGoModelChecked(id, checked) },
       clearGoModelChecks: () => { this.clearGoModelChecks() },
       loadUsage: () => { this.loadUsage() },

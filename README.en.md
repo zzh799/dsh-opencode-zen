@@ -23,7 +23,7 @@ The plugin automatically adds the session headers required by the gateway and re
 - **Image input**: Supports models that advertise image capability in the catalog.
 - **Two independent tiers**: One settings page holds a panel per tier, each with its own switch, credential, endpoint, model list, and picker whitelist. A tier without a usable credential does not register its route and does not appear in the model pickers.
 - **Quota display**: The Go tier's quota windows show in the settings page and in the conversation composer; display only, it never changes what that tier provides.
-- **Model management**: Check the models conversation pickers should offer; an unchecked model leaves the picker, while a conversation already using it keeps running and the change shows the next time a picker opens.
+- **Model management**: Check the models conversation pickers should offer; the Zen list can sort by source/actual price per 100M tokens and appends that price to each row, while the Go list shows and sorts each model's estimated monthly call capacity from the official English documentation. An unchecked model leaves the picker, while a conversation already using it keeps running and the change shows the next time a picker opens.
 - **Model capacity overrides**: Override the context window and maximum output per model, with blank values inheriting the online catalog.
 - **Prompt and caching**: The plugin does not add hidden system prompts; the session ID is used for gateway routing.
 

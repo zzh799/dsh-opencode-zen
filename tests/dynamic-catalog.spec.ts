@@ -166,11 +166,13 @@ describe('runtime model metadata', () => {
   it('isolates malformed or unsupported entries and never takes the request origin from metadata', () => {
     const result = readModelMetadata(metadataDocument({
       valid: modelMetadata({ provider: { npm: '@ai-sdk/anthropic', api: 'https://untrusted.invalid', headers: { authorization: 'bad' } } }),
-      unsupported: modelMetadata({ provider: { npm: '@future/unknown-protocol' } }),
+      unsupported: modelMetadata({ provider: { npm: '@future/unknown-protocol' }, cost: { input: 0.1, output: 0.2, cache_read: 0.002 } }),
       malformed: modelMetadata({ limit: { context: -1, output: 5 } }),
     }), 'https://gateway.example/v1', new Map())
     expect(result.models.get('valid')).toMatchObject({ baseUrl: 'https://gateway.example', api: 'anthropic-messages' })
     expect(result.models.get('valid')).not.toHaveProperty('headers')
+    expect(result.details.get('unsupported')?.pricePer100m?.source).toBeCloseTo(0.5219084, 7)
+    expect(result.details.get('unsupported')?.pricePer100m?.actual).toBeCloseTo(0.0871587028, 9)
     expect([...result.errors.keys()]).toEqual(['unsupported', 'malformed'])
   })
 

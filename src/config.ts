@@ -184,12 +184,39 @@ export const Config = z.object({
   go: z.object(Object.fromEntries(Object.entries(goFields).map(([key, schema]) => [key, schema.volatile()]))),
 }) as z<Partial<OpencodeZenConfig>, LiveConfig>
 
-/** Keep the Loader's references: reparsing them would detach live updates. */
-export function readConfig(config: LiveConfig): OpencodeZenConfig {
-  const { go, ...rest } = config as LiveConfig & Record<string, { get(): unknown }>
-  const plain = Object.fromEntries(Object.entries(rest).map(([key, ref]) => [key, ref.get()]))
-  const goPlain = Object.fromEntries(Object.entries(go).map(([key, ref]) => [key, ref.get()]))
-  return { ...plain, go: goPlain } as unknown as OpencodeZenConfig
+/**
+ * Read a configuration leaf whether the loader supplied a live reference or a
+ * plain value. DSH 0.1.7 can hand a plugin a mixed snapshot during profile
+ * reload, so assuming every leaf has `.get()` makes the whole entry disappear.
+ */
+function readConfigValue(value: unknown): unknown {
+  if (value !== null && typeof value === 'object') {
+    const getter = (value as { get?: unknown }).get
+    if (typeof getter === 'function') return getter.call(value)
+  }
+  return value
+}
+
+function configRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown> : {}
+}
+
+/** Resolve live references without reparsing frozen loader snapshots. */
+export function readConfig(config: unknown): OpencodeZenConfig {
+  const source = configRecord(readConfigValue(config))
+  const { go, ...rest } = source
+  const plain = Object.fromEntries(Object.entries(rest).map(([key, value]) => [key, readConfigValue(value)]))
+  const goPlain = Object.fromEntries(Object.entries(configRecord(readConfigValue(go)))
+    .map(([key, value]) => [key, readConfigValue(value)]))
+  const defaults = PlainConfig({} as OpencodeZenConfig)
+  const defined = (values: Record<string, unknown>): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined))
+  return {
+    ...defaults,
+    ...defined(plain),
+    go: { ...defaults.go, ...defined(goPlain) },
+  } as OpencodeZenConfig
 }
 
 /**

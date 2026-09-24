@@ -89,6 +89,24 @@ describe('the Go plan in the live document', () => {
     expect(plain.refreshMinutes).toBe(DEFAULT_REFRESH_MINUTES)
   })
 
+  it('reads a loader snapshot that mixes live references and plain leaves', () => {
+    const live = Config({
+      baseURL: 'https://example.test/zen/v1',
+      modelLimits: { 'compat-model': { contextWindow: 42 } },
+    })
+    const mixed = {
+      ...live,
+      enabled: true,
+      go: { ...live.go, apiKeyEnv: 'PLAIN_GO_KEY' },
+    }
+    const plain = readConfig(mixed)
+    expect(plain.enabled).toBe(true)
+    expect(plain.baseURL).toBe('https://example.test/zen/v1')
+    expect(plain.modelLimits).toEqual({ 'compat-model': { contextWindow: 42 } })
+    expect(plain.go.apiKeyEnv).toBe('PLAIN_GO_KEY')
+    expect(plain.go.enabled).toBe(true)
+  })
+
   it('reads a live document whose Go block was never written', () => {
     const plain = readConfig(Config({ baseURL: 'https://example.test/zen/v1' }))
     expect(plain.baseURL).toBe('https://example.test/zen/v1')

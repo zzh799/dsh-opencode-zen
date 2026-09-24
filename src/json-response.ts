@@ -1,4 +1,4 @@
-/** Bounded JSON reads with a compatibility fallback for missing compression headers. */
+/** Bounded response reads with a compatibility fallback for missing compression headers. */
 import { promisify } from 'node:util'
 import { brotliDecompress, gunzip, inflate } from 'node:zlib'
 
@@ -29,6 +29,11 @@ async function readBoundedBody(response: Response, maxBytes: number): Promise<Bu
   } finally {
     reader.releaseLock()
   }
+}
+
+/** Read a bounded UTF-8 response without ever exposing an unbounded body to the parser. */
+export async function readBoundedTextResponse(response: Response, maxBytes: number): Promise<string> {
+  return new TextDecoder().decode(await readBoundedBody(response, maxBytes))
 }
 
 /** The limit applies both to bytes delivered by fetch and to any fallback decoder's output. */

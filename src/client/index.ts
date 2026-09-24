@@ -105,7 +105,10 @@ export function apply(ctx: ClientContext): void {
 function sourcesOf(ctx: ClientContext, modelsReady: Promise<unknown>): OpencodeZenSources {
   return {
     models: async () => { await modelsReady; return ctx.remote.opencodeZenModels.read() },
-    goModels: async () => { await modelsReady; return ctx.remote.opencodeGoModels.read() },
+    goModels: async (force) => {
+      await modelsReady
+      return force ? ctx.remote.opencodeGoModels.refresh() : ctx.remote.opencodeGoModels.read()
+    },
     usage: async () => { await modelsReady; return ctx.remote.opencodeGoUsage.read() },
   }
 }

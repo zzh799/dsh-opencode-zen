@@ -5,21 +5,139 @@ import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Registry from '@deepseek-ai/dsh-typert-registry'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { OpencodeZenAdapter } from '../src/adapter.ts'
-import { ZenModelsService } from '../src/models.ts'
+import { OpencodeZenCatalog } from '../src/catalog.ts'
+import {
+  GO_MONTHLY_REQUESTS_URL,
+  GoModelsService,
+  parseGoMonthlyRequestEstimates,
+  ZenModelsService,
+} from '../src/models.ts'
 import { PlainConfig } from '../src/config.ts'
 import { isNewModel, sortModels } from '../src/models-contract.ts'
+import { GO_ROUTE } from '../src/providers.ts'
 import { closeMockGateways, listingBody, mockGateway, textEvents } from './mock-gateway.ts'
-import { metadataDocument, modelMetadata, MODELS_METADATA_URL } from './support/model-metadata.ts'
+import { goMetadataDocument, metadataDocument, modelMetadata, MODELS_METADATA_URL } from './support/model-metadata.ts'
 import { configOf } from './config-of.ts'
 
 afterEach(closeMockGateways)
+
+const estimatedRequestsHTML = `<!doctype html><table>
+  <thead><tr><th>Model</th><th>requests per 5 hour</th><th>requests per week</th><th>requests per month</th></tr></thead>
+  <tbody>
+    <tr><td>Kimi K3</td><td>110</td><td>250</td><td>490</td></tr>
+    <tr><td>DeepSeek V4.1 Flash<br><small>4x · Ends Sep 27</small></td><td><del>6,500</del><br><strong>26,000</strong></td><td><del>16,250</del><br><strong>65,000</strong></td><td><del>32,500</del><br><strong>130,000</strong></td></tr>
+    <tr><td>Space Bunny Free</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+  </tbody>
+</table>`
+
+it('parses current monthly estimates while ignoring struck-through and promotional values', () => {
+  const estimates = parseGoMonthlyRequestEstimates(estimatedRequestsHTML)
+
+  expect(estimates.get('kimik3')).toBe(490)
+  expect(estimates.get('deepseekv41flash')).toBe(130_000)
+  expect(estimates.get('spacebunnyfree')).toBe('unlimited')
+  expect(() => parseGoMonthlyRequestEstimates('<table><tr><th>requests per month</th></tr></table>')).toThrow(/empty/)
+})
+
+it('merges Go estimates without making a documentation outage break the model list', async () => {
+  const originalFetch = globalThis.fetch
+  let docsStatus = 200
+  let docsRequests = 0
+  vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    if (url === GO_MONTHLY_REQUESTS_URL) {
+      docsRequests += 1
+      return Promise.resolve(new Response(docsStatus === 200 ? estimatedRequestsHTML : 'unavailable', {
+        status: docsStatus,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      }))
+    }
+    if (url === MODELS_METADATA_URL) {
+      return Promise.resolve(Response.json(goMetadataDocument({
+        'kimi-k3': modelMetadata({ name: 'Kimi K3' }),
+        'deepseek-v4.1-flash': modelMetadata({ name: 'DeepSeek V4.1 Flash' }),
+        'space-bunny-free': modelMetadata({ name: 'Space Bunny Free' }),
+        unpublished: modelMetadata({ name: 'Unpublished Model' }),
+      })))
+    }
+    return originalFetch(input, init)
+  })
+  const gateway = await mockGateway({
+    status: 200,
+    body: listingBody(['kimi-k3', 'deepseek-v4.1-flash', 'space-bunny-free', 'unpublished']),
+  })
+  const catalog = new OpencodeZenCatalog(gateway.url, 60_000, () => {}, () => {}, GO_ROUTE)
+  const ctx = new Context()
+  const service = new GoModelsService(ctx, { catalog: () => catalog })
+  const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+  const emptyCtx = new Context()
+  const byId = (models: readonly { id: string; estimatedMonthlyRequests?: number | 'unlimited' | null }[]) =>
+    new Map(models.map(model => [model.id, model.estimatedMonthlyRequests]))
+  try {
+    const first = await service.read()
+    expect(first.every(model => !Object.hasOwn(model, 'pricePer100m'))).toBe(true)
+    expect(byId(first)).toEqual(new Map([
+      ['kimi-k3', 490],
+      ['deepseek-v4.1-flash', 130_000],
+      ['space-bunny-free', 'unlimited'],
+      // A successful table with no row is distinct from a failed first read.
+      ['unpublished', null],
+    ]))
+
+    await service.read()
+    expect(docsRequests).toBe(1)
+    now.mockReturnValue(1_000_000 + 24 * 60 * 60 * 1000)
+    await service.read()
+    expect(docsRequests).toBe(2)
+
+    docsStatus = 503
+    const kept = await service.refresh()
+    expect(docsRequests).toBe(3)
+    expect(byId(kept).get('kimi-k3')).toBe(490)
+
+    const failedCtx = new Context()
+    const failedFirst = new GoModelsService(failedCtx, { catalog: () => catalog })
+    await failedFirst.read()
+    expect(docsRequests).toBe(4)
+    docsStatus = 200
+    const recovered = await failedFirst.read()
+    expect(docsRequests).toBe(5)
+    expect(byId(recovered).get('kimi-k3')).toBe(490)
+    docsStatus = 503
+
+    const neverLoaded = new GoModelsService(emptyCtx, { catalog: () => catalog })
+    const bare = await neverLoaded.read()
+    expect(bare.every(model => model.estimatedMonthlyRequests === undefined)).toBe(true)
+    await failedCtx.fiber.dispose()
+  } finally {
+    now.mockRestore()
+    vi.unstubAllGlobals()
+    await emptyCtx.fiber.dispose()
+    await ctx.fiber.dispose()
+  }
+})
+
+it('sorts settings models by the selected metric while keeping retired rows last', () => {
+  const models = [
+    { id: 'old', name: 'Old', deprecated: true, releaseDate: '2025-01-01', pricePer100m: { source: 0.1, actual: 0.01 } },
+    { id: 'new', name: 'New', releaseDate: '2026-01-01', pricePer100m: { source: 2, actual: 0.3 } },
+    { id: 'cheap', name: 'Cheap', releaseDate: '2024-01-01', pricePer100m: { source: 1, actual: 0.1 } },
+    { id: 'unlimited', name: 'Unlimited', releaseDate: '2023-01-01', estimatedMonthlyRequests: 'unlimited' as const },
+    { id: 'many', name: 'Many', estimatedMonthlyRequests: 100 },
+    { id: 'unknown', name: 'Unknown', estimatedMonthlyRequests: null },
+  ]
+
+  expect(sortModels(models, Date.parse('2026-01-02'), 'price').map(model => model.id)).toEqual(['cheap', 'new', 'many', 'unknown', 'unlimited', 'old'])
+  expect(sortModels(models, Date.parse('2026-01-02'), 'release').map(model => model.id)).toEqual(['new', 'cheap', 'unlimited', 'many', 'unknown', 'old'])
+  expect(sortModels(models, Date.parse('2026-01-02'), 'monthly').map(model => model.id)).toEqual(['unlimited', 'many', 'cheap', 'new', 'unknown', 'old'])
+})
 
 it('keeps settings gateway-only and filters deprecated picker entries without disabling their requests', async () => {
   const original = globalThis.fetch
   let metadataDown = false
   vi.stubGlobal('fetch', (input: string | URL | Request, init?: RequestInit) => String(input) === MODELS_METADATA_URL
     ? Promise.resolve(metadataDown ? new Response('', { status: 503 }) : Response.json(metadataDocument({
-      current: modelMetadata({ release_date: '2026-09-22' }),
+      current: modelMetadata({ release_date: '2026-09-22', cost: { input: 0.1, output: 0.2, cache_read: 0.002 } }),
       old: modelMetadata({ status: 'deprecated' }),
       absent: modelMetadata({ status: 'deprecated' }),
     }))) : original(input, init))
@@ -35,7 +153,8 @@ it('keeps settings gateway-only and filters deprecated picker entries without di
   try {
     const read = () => ctx.typertGateway.invoke({ namespace: 'opencodeZenModels', method: 'read', args: {} })
     expect(await read()).toEqual([
-      expect.objectContaining({ id: 'current', releaseDate: '2026-09-22', contextWindow: 262144 }),
+      expect.objectContaining({ id: 'current', releaseDate: '2026-09-22', contextWindow: 262144,
+        pricePer100m: expect.any(Object) }),
       expect.objectContaining({ id: 'old', deprecated: true }),
     ])
     expect((await adapter.listModels('opencode-zen')).map(m => m.id)).toEqual(['current'])

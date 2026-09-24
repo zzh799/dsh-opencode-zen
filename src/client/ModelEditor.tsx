@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import { isNewModel, sortModels, type ZenModel } from '../models-contract.ts'
+import { isNewModel, sortModels, type ModelSort, type ZenModel } from '../models-contract.ts'
 import type { OpencodeZenModelLimit, OpencodeZenModelLimits, OpencodeZenModels } from './section-controller.ts'
 import type { EditorCopyKey, OpencodeZenKey, en } from './locales.ts'
 import css from './Section.module.css'
@@ -19,7 +19,7 @@ export function hasCapacityOverride(limit: OpencodeZenModelLimit | null | undefi
 }
 
 /** One gateway-backed list, serving both picker membership and staged capacities. */
-export function ModelEditor({ models, draft, checked, checkedCount, t, disabled, idPrefix = 'opencode-zen', copy, onEdit, onToggleCheck, onClearChecks }: {
+export function ModelEditor({ models, draft, checked, checkedCount, t, disabled, idPrefix = 'opencode-zen', copy, compact, sortOptions = ['default', 'release'], onEdit, onToggleCheck, onClearChecks }: {
   models: OpencodeZenModels
   draft: OpencodeZenModelLimits
   /** Ids the conversation pickers currently offer; every listed model while the whitelist was never set. */
@@ -32,13 +32,17 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
   idPrefix?: string
   /** Wording for the strings a second editor on the same page must not repeat. */
   copy?: ModelEditorCopy
+  /** Go's list keeps only the name and monthly estimate; full metadata stays in the detail pane. */
+  compact?: boolean
+  /** Sort choices exposed by this plan's list. */
+  sortOptions?: readonly ModelSort[]
   onEdit: (next: OpencodeZenModelLimits) => void
   onToggleCheck: (id: string, checked: boolean) => void
   onClearChecks: () => void
 }) {
   const say = (key: EditorCopyKey, params?: Record<string, unknown>): string => t(copy?.[key] ?? key, params)
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [sort, setSort] = useState<ModelSort>('default')
   const [selected, setSelected] = useState<string>()
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -46,20 +50,15 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
     return () => { clearInterval(timer) }
   }, [])
   // Saved overrides never establish membership: only a successful gateway listing does.
-  const all = sortModels(models.status === 'ready' ? models.entries : [], now)
+  const all = sortModels(models.status === 'ready' ? models.entries : [], now, sort)
   const shown = new Set(checked)
   const normalized = query.trim().toLocaleLowerCase()
-  const entries = all.filter(model => `${model.name ?? ''} ${model.id}`.toLocaleLowerCase().includes(normalized)
-    && (filter === 'all' || filter === 'new' && isNewModel(model, now)
-      || filter === 'custom' && hasCapacityOverride(draft[model.id]) || filter === 'deprecated' && model.deprecated))
+  const entries = all.filter(model => `${model.name ?? ''} ${model.id}`.toLocaleLowerCase().includes(normalized))
   const model = entries.find(entry => entry.id === selected) ?? entries[0]
   const customized = all.filter(entry => hasCapacityOverride(draft[entry.id])).length
-  const filters = [
-    ['all', 'filterAll', all.length],
-    ['new', 'filterNew', all.filter(entry => isNewModel(entry, now)).length],
-    ['custom', 'filterCustom', customized],
-    ['deprecated', 'filterDeprecated', all.filter(entry => entry.deprecated).length],
-  ] as const
+  const sortLabels: Record<ModelSort, keyof typeof en> = {
+    default: 'sortDefault', price: 'sortPrice', release: 'sortRelease', monthly: 'sortMonthly',
+  }
   const write = (id: string, field: keyof OpencodeZenModelLimit, value: number | undefined): void => {
     const current = draft[id] === null ? { contextWindow: null, maxTokens: null } : draft[id] ?? {}
     onEdit({ ...draft, [id]: { ...current, [field]: value ?? null } })
@@ -68,6 +67,16 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
     {isNewModel(entry, now) ? <span className={css.newBadge} title={say('newHint')}>NEW</span> : null}
     {entry.deprecated ? <Tag tone="warning">{say('deprecatedBadge')}</Tag> : null}
   </>
+  const monthlyRequests = (entry: ZenModel): string | undefined => {
+    if (entry.estimatedMonthlyRequests === undefined) return undefined
+    if (entry.estimatedMonthlyRequests === null) return t('goMonthlyRequestsUnpublished')
+    if (entry.estimatedMonthlyRequests === 'unlimited') return t('goMonthlyRequestsUnlimited')
+    return t('goMonthlyRequests', { count: entry.estimatedMonthlyRequests.toLocaleString() })
+  }
+  const formatPrice = (value: number): string => {
+    const digits = value > 0 && value < 0.01 ? 4 : 2
+    return `$${value.toFixed(digits)}`
+  }
   return (
     <div className={css.limitsEditor}>
       <p className={css.sectionTitle}>{say('limitsLabel')}</p>
@@ -75,17 +84,20 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
       <label className={css.visuallyHidden} htmlFor={`${idPrefix}-model-filter`}>{say('limitsFilterLabel')}</label>
       <input id={`${idPrefix}-model-filter`} className={css.input} type="search" autoComplete="off"
         placeholder={say('limitsFilterPlaceholder')} value={query} onChange={event => { setQuery(event.target.value) }} />
-      <div className={css.filters} role="group" aria-label={say('filterLabel')}>
-        {filters.map(([key, label, count]) => <button key={key} type="button" className={css.filter}
-          aria-pressed={filter === key} onClick={() => { setFilter(key) }}>{t(label)} <span>{count}</span></button>)}
-        <button type="button" className={`${css.filter} ${css.clearChecks}`}
+      <div className={css.modelSortRow}>
+        <label className={css.sortLabel} htmlFor={`${idPrefix}-model-sort`}>{say('sortBy')}</label>
+        <select id={`${idPrefix}-model-sort`} className={css.sortSelect} value={sort}
+          onChange={event => { setSort(event.target.value as ModelSort) }}>
+          {sortOptions.map(option => <option key={option} value={option}>{t(sortLabels[option])}</option>)}
+        </select>
+        <button type="button" className={css.clearChecks}
           disabled={disabled || checkedCount === 0} onClick={onClearChecks}>{say('clearChecked')}</button>
       </div>
       {model ? (
         <div className={css.modelLayout}>
           <nav className={css.modelList} aria-label={say('modelsLabel')}>
             {entries.map(entry => <div key={entry.id} className={css.modelRow}>
-              <label className={css.modelCheck}>
+              <label className={compact ? `${css.modelCheck} ${css.modelCheckCompact}` : css.modelCheck}>
                 <input type="checkbox" className={css.checkbox}
                   checked={shown.has(entry.id)} disabled={disabled}
                   aria-label={say('modelVisibleLabel', { name: entry.name ?? entry.id })}
@@ -93,9 +105,17 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
               </label>
               <button type="button" className={css.modelChoice}
                 aria-pressed={entry.id === model.id} onClick={() => { setSelected(entry.id) }}>
-                <span className={css.modelName}>{entry.name ?? entry.id} {badges(entry)}</span>
-                <code className={css.limitsModelId} translate="no">{entry.id}</code>
-                {isNewModel(entry, now) ? <span className={css.releaseDate}>{say('releasedOn', { date: entry.releaseDate })}</span> : null}
+                {compact ? <span className={css.modelSummary}>
+                  <span className={css.modelName}>{entry.name ?? entry.id}</span>
+                  {monthlyRequests(entry) === undefined ? null : <span className={css.modelMonthlyRequests}>{monthlyRequests(entry)}</span>}
+                </span> : <>
+                  <span className={css.modelName}>{entry.name ?? entry.id} {badges(entry)}</span>
+                  <code className={css.limitsModelId} translate="no">{entry.id}</code>
+                  {isNewModel(entry, now) ? <span className={css.releaseDate}>{say('releasedOn', { date: entry.releaseDate })}</span> : null}
+                  {entry.pricePer100m ? <span className={css.modelPrice}>{t('pricePer100m', {
+                    source: formatPrice(entry.pricePer100m.source), actual: formatPrice(entry.pricePer100m.actual),
+                  })}</span> : null}
+                </>}
               </button>
             </div>)}
           </nav>

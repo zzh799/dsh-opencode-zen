@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
-import { readModelMetadata } from '../src/model-metadata.ts'
+import { calculatePricePer100m, readModelMetadata } from '../src/model-metadata.ts'
 import { GO_ROUTE, ZEN_ROUTE } from '../src/providers.ts'
 import { goMetadataDocument, metadataDocument } from './support/model-metadata.ts'
 
@@ -37,6 +37,14 @@ describe('the shipped pi-ai tables', () => {
     expect([...go.keys()].sort()).not.toEqual([...zen.keys()].sort())
     expect(go.has('qwen3.8-max')).toBe(true)
     expect(zen.has('qwen3.8-max')).toBe(false)
+  })
+})
+
+describe('model price summary', () => {
+  it('applies the supplied weighted 100M-token formula and plan multiplier', () => {
+    const price = calculatePricePer100m({ input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0 })
+    expect(price.source).toBeCloseTo(0.5219084, 7)
+    expect(price.actual).toBeCloseTo(0.0871587028, 9)
   })
 })
 

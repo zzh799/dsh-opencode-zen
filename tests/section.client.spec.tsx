@@ -227,16 +227,22 @@ describe('OpencodeZenSection', () => {
     expect(acts.save).not.toHaveBeenCalled()
   })
 
-  it('shows new models first, deprecated models last, and retains search within status filters', () => {
+  it('shows the default order and replaces status filters with sorting choices', () => {
     renderSection(stateOf({ models: listing([
-      { id: 'old', name: 'Old', deprecated: true }, { id: 'normal', name: 'Normal' },
-      { id: 'new', name: 'New', releaseDate: new Date().toISOString().slice(0, 10) },
+      { id: 'old', name: 'Old', deprecated: true, releaseDate: '2020-01-01' },
+      { id: 'normal', name: 'Normal', releaseDate: '2025-01-01', pricePer100m: { source: 0.5219, actual: 0.0872 } },
+      { id: 'new', name: 'New', releaseDate: new Date().toISOString().slice(0, 10), pricePer100m: { source: 1, actual: 0.2 } },
     ]) }))
     const nav = () => screen.getByRole('navigation', { name: en.modelsLabel })
     expect(within(nav()).getAllByRole('button').map(button => button.textContent?.split(' ')[0])).toEqual(['New', 'Normal', 'Old'])
-    fireEvent.click(screen.getByRole('button', { name: new RegExp(en.filterDeprecated + ' 1') }))
-    expect(within(nav()).getAllByRole('button')).toHaveLength(1)
-    fireEvent.change(screen.getByLabelText(en.limitsFilterLabel), { target: { value: 'new' } })
+    expect(screen.getAllByRole('combobox')).toHaveLength(2)
+    const sort = screen.getAllByLabelText(en.sortBy)[0] as HTMLSelectElement
+    expect([...sort.options].map(option => option.value)).toEqual(['default', 'price', 'release'])
+    expect(within(nav()).getByRole('button', { name: /Normal/ }).textContent).toContain('$0.52')
+
+    fireEvent.change(sort, { target: { value: 'release' } })
+    expect(within(nav()).getAllByRole('button').map(button => button.textContent?.split(' ')[0])).toEqual(['New', 'Normal', 'Old'])
+    fireEvent.change(screen.getByLabelText(en.limitsFilterLabel), { target: { value: 'does-not-exist' } })
     expect(screen.queryByRole('navigation')).toBeNull()
   })
 
@@ -894,6 +900,50 @@ describe('both plans on one page', () => {
     expect(screen.getByRole('progressbar', { name: en.usage_rolling }).getAttribute('value')).toBe('20')
     expect(screen.getByRole('progressbar', { name: en.usage_weekly }).getAttribute('value')).toBe('100')
     expect(screen.getByText(`${en.usageResets} ${new Date(goUsage.monthly.resetsAt).toLocaleString()}`)).toBeTruthy()
+  })
+
+  it('keeps Go rows to the name and monthly estimate while metadata stays in the detail pane', () => {
+    renderSection(stateOf({ go: goPanel({
+      models: listing([
+        { id: 'kimi-k3', name: 'Kimi K3', estimatedMonthlyRequests: 1080, releaseDate: '2026-01-15' },
+        { id: 'space-bunny-free', name: 'Space Bunny Free', estimatedMonthlyRequests: 'unlimited' },
+        { id: 'old', name: 'Old Go model', deprecated: true, estimatedMonthlyRequests: null },
+        { id: 'not-loaded', name: 'Not loaded' },
+      ]),
+      checkedModels: ['kimi-k3', 'space-bunny-free', 'old', 'not-loaded'],
+      checkedCount: 4,
+    }) }))
+
+    const list = screen.getByRole('navigation', { name: en.goModelsLabel })
+    const goSort = screen.getByLabelText(t('goSortBy')) as HTMLSelectElement
+    expect([...goSort.options].map(option => option.value)).toEqual(['default', 'release', 'monthly'])
+    const kimi = within(list).getByRole('button', { name: /Kimi K3/ })
+    expect(within(kimi).getByText(t('goMonthlyRequests', { count: '1,080' }))).toBeTruthy()
+    expect(within(kimi).queryByText('kimi-k3')).toBeNull()
+    expect(within(kimi).queryByText(t('goReleasedOn', { date: '2026-01-15' }))).toBeNull()
+    expect(within(list).getByText(en.goMonthlyRequestsUnlimited)).toBeTruthy()
+    expect(within(list).getByText(en.goMonthlyRequestsUnpublished)).toBeTruthy()
+    expect(within(list).getByRole('button', { name: 'Not loaded' }).textContent).toBe('Not loaded')
+    fireEvent.change(goSort, { target: { value: 'monthly' } })
+    expect(within(list).getAllByRole('button').map(button => button.textContent?.split(' ')[0]))
+      .toEqual(['Space', 'Kimi', 'Not', 'Old'])
+
+    fireEvent.click(within(list).getByRole('button', { name: /Kimi K3/ }))
+    const details = screen.getByRole('region', { name: en.goModelDetails })
+    expect(within(details).getByText('kimi-k3')).toBeTruthy()
+    expect(within(details).getByText(t('goReleaseSource', { date: '2026-01-15' }))).toBeTruthy()
+    fireEvent.click(within(list).getByRole('button', { name: /Old Go model/ }))
+    expect(within(screen.getByRole('region', { name: en.goModelDetails })).getByText(en.goDeprecatedBadge)).toBeTruthy()
+  })
+
+  it('forces the Go model and estimate refresh only from the explicit refresh control', () => {
+    const reading = actions()
+    renderSection(stateOf(), reading)
+    expect(reading.loadGoModels).toHaveBeenCalledTimes(1)
+    expect(reading.loadGoModels).toHaveBeenCalledWith()
+
+    fireEvent.click(screen.getByRole('button', { name: en.goModelsRefresh }))
+    expect(reading.loadGoModels).toHaveBeenLastCalledWith(true)
   })
 
   it('words the Go quota by what the endpoint actually said', () => {

@@ -449,6 +449,7 @@ function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
           <p className={css.hint}>{t('showDeprecatedHint')}</p>
           <ModelEditor models={state.models} draft={state.modelLimitDraft}
             checked={state.checkedModels} checkedCount={state.checkedCount}
+            sortOptions={['default', 'price', 'release']}
             t={t} disabled={disabled || state.saving}
             onEdit={next => { props.edit('modelLimits', JSON.stringify(next)) }}
             onToggleCheck={setModelChecked} onClearChecks={props.clearModelChecks} />
@@ -491,7 +492,7 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
   disabled: boolean
   saving: boolean
   onEdit: (field: string, text: string) => void
-  onRefreshModels: () => void
+  onRefreshModels: (force?: boolean) => void
   onToggleCheck: (id: string, checked: boolean) => void
   onClearChecks: () => void
   onRefreshUsage: () => void
@@ -529,7 +530,7 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
           countLabel={t('modelsCount', { count: panel.models.status === 'ready' ? panel.models.count : 0 })}
           refreshLabel={t('goModelsRefresh')}
           loading={panel.models.status === 'loading'}
-          onRefresh={onRefreshModels}
+          onRefresh={() => { onRefreshModels(true) }}
         />
         <ModelsBody models={panel.models} copy={{
           loading: t('goModelsLoading'), failed: t('goModelsFailed'), empty: t('goModelsEmpty'),
@@ -554,7 +555,8 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
         <p className={css.hint}>{t('goShowDeprecatedHint')}</p>
         <ModelEditor models={panel.models} draft={panel.modelLimitDraft}
           checked={panel.checkedModels} checkedCount={panel.checkedCount}
-          t={t} disabled={disabled || saving} idPrefix="opencode-go" copy={goEditorCopy}
+          sortOptions={['default', 'release', 'monthly']}
+          t={t} disabled={disabled || saving} idPrefix="opencode-go" copy={goEditorCopy} compact
           onEdit={next => { onEdit('go.modelLimits', JSON.stringify(next)) }}
           onToggleCheck={onToggleCheck} onClearChecks={onClearChecks} />
       </div>
