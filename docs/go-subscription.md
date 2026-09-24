@@ -43,12 +43,22 @@ the plan they do not have has no credential, so it has no route.
 
 ## Settings page
 
-One page covers both plans. Each panel holds its own switch, its own API key
-(the key is written write-only through the credentials domain, never through the
-settings document), its own model list with per-model capacities and picker
-checkboxes, and - for Go - the subscription's quota windows. The credential
-references, endpoints, and the shared adapter tuning sit behind the page's
-advanced disclosure. One Save applies the whole page.
+One page covers both plans, and it leads with the Go panel. Each panel holds its
+own switch, its own API key (the key is written write-only through the
+credentials domain, never through the settings document), its own model list
+with per-model capacities and picker checkboxes, and - for Go - the
+subscription's quota windows. A panel shows that switch alone while its plan is
+off: the settings below it cannot take effect, and the switch is what brings
+them back. The credential references, endpoints, and the shared adapter tuning
+sit behind the page's advanced disclosure. One Save applies the whole page.
+
+The page states each rule once, in the place that owns it. A standing hint
+paragraph stays only where it explains a state the controls cannot show by
+themselves; the model editor's picker explanation, which describes what its
+checkboxes do, sits behind a round help icon on the editor's own title. A model
+row is one line - name, badges, and the price this plan charges - with the
+source price and the per-million conversion behind the row's hover detail; the
+model id and the release date stay in the detail pane.
 
 ## Quota display, and what it does not do
 

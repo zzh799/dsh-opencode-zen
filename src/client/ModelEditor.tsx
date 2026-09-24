@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import { isNewModel, sortModels, type ModelSort, type ZenModel } from '../models-contract.ts'
+import { Tag, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  formatModelPrice, isNewModel, priceDetail, sortModels,
+  type ModelSort, type ZenModel, type ZenModelPrice,
+} from '../models-contract.ts'
 import type { OpencodeZenModelLimit, OpencodeZenModelLimits, OpencodeZenModels } from './section-controller.ts'
 import type { EditorCopyKey, OpencodeZenKey, en } from './locales.ts'
 import css from './Section.module.css'
@@ -73,14 +76,30 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
     if (entry.estimatedMonthlyRequests === 'unlimited') return t('goMonthlyRequestsUnlimited')
     return t('goMonthlyRequests', { count: entry.estimatedMonthlyRequests.toLocaleString() })
   }
-  const formatPrice = (value: number): string => {
-    const digits = value > 0 && value < 0.01 ? 4 : 2
-    return `$${value.toFixed(digits)}`
+  /**
+   * The hover detail behind a row's price badge: both prices the gateway
+   * reported, the per-million conversion a reader compares models by, and the
+   * source ratio once the plan's multiplier actually moved the number. Kept as
+   * a resolver so nothing is formatted for rows nobody hovers.
+   */
+  const priceHint = (price: ZenModelPrice): string => {
+    const detail = priceDetail(price)
+    return [
+      t('priceBasis'),
+      t('priceSource', { value: formatModelPrice(price.source) }),
+      t('priceActual', { value: detail.badge }),
+      t('pricePerMillion', { value: detail.perMillion }),
+      detail.ratio === undefined ? null : t('priceRatio', { percent: detail.ratio }),
+    ].filter((line): line is string => line !== null).join('\n')
   }
   return (
     <div className={css.limitsEditor}>
-      <p className={css.sectionTitle}>{say('limitsLabel')}</p>
-      <p className={css.hint}>{say('modelPickHint')}</p>
+      <p className={css.sectionTitle}>
+        <span className={css.sectionTitleText}>{say('limitsLabel')}</span>
+        <Tooltip label={say('modelPickHint')} side="bottom" maxWidth={340}>
+          <button type="button" className={css.help} aria-label={say('modelPickHint')}>?</button>
+        </Tooltip>
+      </p>
       <label className={css.visuallyHidden} htmlFor={`${idPrefix}-model-filter`}>{say('limitsFilterLabel')}</label>
       <input id={`${idPrefix}-model-filter`} className={css.input} type="search" autoComplete="off"
         placeholder={say('limitsFilterPlaceholder')} value={query} onChange={event => { setQuery(event.target.value) }} />
@@ -103,20 +122,24 @@ export function ModelEditor({ models, draft, checked, checkedCount, t, disabled,
                   aria-label={say('modelVisibleLabel', { name: entry.name ?? entry.id })}
                   onChange={event => { onToggleCheck(entry.id, event.target.checked) }} />
               </label>
+              {/* The price rides the whole row's bubble rather than a nested
+                  control: one interactive element per row, and focus opens the
+                  same arithmetic hover does. */}
+              <Tooltip
+                label={() => entry.pricePer100m === undefined ? '' : priceHint(entry.pricePer100m)}
+                side="bottom" maxWidth={280} disabled={entry.pricePer100m === undefined}>
               <button type="button" className={css.modelChoice}
                 aria-pressed={entry.id === model.id} onClick={() => { setSelected(entry.id) }}>
                 {compact ? <span className={css.modelSummary}>
                   <span className={css.modelName}>{entry.name ?? entry.id}</span>
                   {monthlyRequests(entry) === undefined ? null : <span className={css.modelMonthlyRequests}>{monthlyRequests(entry)}</span>}
-                </span> : <>
-                  <span className={css.modelName}>{entry.name ?? entry.id} {badges(entry)}</span>
-                  <code className={css.limitsModelId} translate="no">{entry.id}</code>
-                  {isNewModel(entry, now) ? <span className={css.releaseDate}>{say('releasedOn', { date: entry.releaseDate })}</span> : null}
-                  {entry.pricePer100m ? <span className={css.modelPrice}>{t('pricePer100m', {
-                    source: formatPrice(entry.pricePer100m.source), actual: formatPrice(entry.pricePer100m.actual),
-                  })}</span> : null}
-                </>}
+                </span> : <span className={css.modelName}>
+                  <span className={css.modelNameText}>{entry.name ?? entry.id}</span>
+                  {badges(entry)}
+                  {entry.pricePer100m ? <span className={css.modelPriceBadge}>{formatModelPrice(entry.pricePer100m.actual)}</span> : null}
+                </span>}
               </button>
+              </Tooltip>
             </div>)}
           </nav>
           <section className={css.modelDetails} aria-label={say('modelDetails')}>

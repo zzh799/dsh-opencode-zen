@@ -13,7 +13,7 @@ import {
   ZenModelsService,
 } from '../src/models.ts'
 import { PlainConfig } from '../src/config.ts'
-import { isNewModel, sortModels } from '../src/models-contract.ts'
+import { formatModelPrice, isNewModel, priceDetail, sortModels } from '../src/models-contract.ts'
 import { GO_ROUTE } from '../src/providers.ts'
 import { closeMockGateways, listingBody, mockGateway, textEvents } from './mock-gateway.ts'
 import { goMetadataDocument, metadataDocument, modelMetadata, MODELS_METADATA_URL } from './support/model-metadata.ts'
@@ -186,6 +186,19 @@ it('uses actual release dates for the seven-day badge and sorts deprecated model
     { id: 'old', deprecated: true, releaseDate: '2026-09-22' },
     { id: 'normal' }, { id: 'new', releaseDate: '2026-09-22' },
   ], now).map(m => m.id)).toEqual(['new', 'normal', 'old'])
+})
+
+it('reports the price badge and the arithmetic behind its hover', () => {
+  expect(formatModelPrice(3)).toBe('$3.00')
+  expect(formatModelPrice(0.0872)).toBe('$0.09')
+  // Sub-cent prices keep four digits; at two, cheap models would all read $0.00.
+  expect(formatModelPrice(0.004)).toBe('$0.0040')
+  // Charging the source price leaves no ratio to report.
+  expect(priceDetail({ source: 3, actual: 3 })).toEqual({ badge: '$3.00', perMillion: '$0.0300' })
+  expect(priceDetail({ source: 0.5219, actual: 0.0872 }))
+    .toEqual({ badge: '$0.09', perMillion: '$0.0009', ratio: '17%' })
+  // A zero source price cannot serve as the baseline for a percentage.
+  expect(priceDetail({ source: 0, actual: 0 })).toEqual({ badge: '$0.00', perMillion: '$0.0000' })
 })
 
 it('round-trips the picker whitelist, keeping "never set" distinct from "none"', () => {

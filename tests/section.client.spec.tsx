@@ -234,16 +234,44 @@ describe('OpencodeZenSection', () => {
       { id: 'new', name: 'New', releaseDate: new Date().toISOString().slice(0, 10), pricePer100m: { source: 1, actual: 0.2 } },
     ]) }))
     const nav = () => screen.getByRole('navigation', { name: en.modelsLabel })
-    expect(within(nav()).getAllByRole('button').map(button => button.textContent?.split(' ')[0])).toEqual(['New', 'Normal', 'Old'])
+    /** A row leads with the model name; its badges and price badge follow it. */
+    const order = (): string[] => within(nav()).getAllByRole('button')
+      .map(button => (button.textContent ?? '').replace(/(?:NEW|Deprecated|\$[\d.]+)+$/, ''))
+    expect(order()).toEqual(['New', 'Normal', 'Old'])
     expect(screen.getAllByRole('combobox')).toHaveLength(2)
     const sort = screen.getAllByLabelText(en.sortBy)[0] as HTMLSelectElement
     expect([...sort.options].map(option => option.value)).toEqual(['default', 'price', 'release'])
-    expect(within(nav()).getByRole('button', { name: /Normal/ }).textContent).toContain('$0.52')
+    // The badge carries what this plan charges, not the source price it came from.
+    expect(within(nav()).getByRole('button', { name: /Normal/ }).textContent).toContain('$0.09')
 
     fireEvent.change(sort, { target: { value: 'release' } })
-    expect(within(nav()).getAllByRole('button').map(button => button.textContent?.split(' ')[0])).toEqual(['New', 'Normal', 'Old'])
+    expect(order()).toEqual(['New', 'Normal', 'Old'])
     fireEvent.change(screen.getByLabelText(en.limitsFilterLabel), { target: { value: 'does-not-exist' } })
     expect(screen.queryByRole('navigation')).toBeNull()
+  })
+
+  it('keeps each Zen row to one line, with the actual price on a badge', () => {
+    renderSection(stateOf({ models: listing([
+      { id: 'normal', name: 'Normal', releaseDate: '2025-01-01', pricePer100m: { source: 0.5219, actual: 0.0872 } },
+    ]) }))
+
+    const row = screen.getByRole('button', { name: /Normal/ })
+    expect(within(row).getByText('$0.09')).toBeTruthy()
+    // The id and the release date leave the row; the detail pane still carries both.
+    expect(row.querySelector('code')).toBeNull()
+    expect(row.textContent).not.toContain('2025-01-01')
+    expect(row.textContent).not.toContain('$0.52')
+    const details = screen.getByRole('region', { name: en.modelDetails })
+    expect(within(details).getByText('normal')).toBeTruthy()
+    expect(within(details).getByText(t('releaseSource', { date: '2025-01-01' }))).toBeTruthy()
+  })
+
+  it('moves the picker explanation onto a help control at the editor title', () => {
+    renderSection(stateOf({ models: listing([{ id: 'a', name: 'Alpha' }]) }))
+
+    expect(screen.queryByText(en.modelPickHint)).toBeNull()
+    expect(screen.getByRole('button', { name: en.modelPickHint })).toBeTruthy()
+    expect(screen.getByText(en.limitsLabel)).toBeTruthy()
   })
 
   it('shows one selected model editor immediately alongside the searchable list', () => {
@@ -876,6 +904,34 @@ describe('both plans on one page', () => {
     monthly: { status: 'ok' as const, percent: 41, resetsAt: '2026-09-30T00:00:00Z' },
   }
 
+  it('leads with the Go plan, and keeps each plan its own labeled region', () => {
+    renderSection(stateOf({
+      models: listing([{ id: 'a', name: 'Alpha' }]),
+      go: goPanel({ models: listing([{ id: 'g', name: 'Gamma' }]) }),
+    }))
+
+    const go = screen.getByRole('region', { name: en.planGoTitle })
+    const zen = screen.getByRole('region', { name: en.planZenTitle })
+    expect(go.compareDocumentPosition(zen) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('drops a plan’s own settings while its switch is off', () => {
+    // The switch that turns the plan back on is the whole panel while it is off.
+    renderSection(stateOf({ enabled: false }))
+    expect(screen.getByRole('switch', { name: en.enabledLabel })).toBeTruthy()
+    expect(screen.queryByLabelText(en.keyLabel)).toBeNull()
+    expect(screen.queryByText(en.modelsLabel)).toBeNull()
+    expect(screen.queryByText(en.limitsLabel)).toBeNull()
+    cleanup()
+
+    renderSection(stateOf({ go: goPanel({ enabled: false }) }))
+    expect(screen.getByRole('switch', { name: en.goEnabledLabel })).toBeTruthy()
+    expect(screen.queryByLabelText(en.goKeyLabel)).toBeNull()
+    expect(screen.queryByText(en.goModelsLabel)).toBeNull()
+    expect(screen.queryByText(en.goQuotaLabel)).toBeNull()
+    expect(screen.queryByText(en.goLimitsLabel)).toBeNull()
+  })
+
   it('gives each plan its own editor, landmarks and control ids', () => {
     renderSection(stateOf({
       models: listing([{ id: 'a', name: 'Alpha' }]),
@@ -920,7 +976,9 @@ describe('both plans on one page', () => {
     const kimi = within(list).getByRole('button', { name: /Kimi K3/ })
     expect(within(kimi).getByText(t('goMonthlyRequests', { count: '1,080' }))).toBeTruthy()
     expect(within(kimi).queryByText('kimi-k3')).toBeNull()
-    expect(within(kimi).queryByText(t('goReleasedOn', { date: '2026-01-15' }))).toBeNull()
+    // One line, so the id and the release date stay in the detail pane.
+    expect(kimi.querySelector('code')).toBeNull()
+    expect(kimi.textContent).not.toContain('2026-01-15')
     expect(within(list).getByText(en.goMonthlyRequestsUnlimited)).toBeTruthy()
     expect(within(list).getByText(en.goMonthlyRequestsUnpublished)).toBeTruthy()
     expect(within(list).getByRole('button', { name: 'Not loaded' }).textContent).toBe('Not loaded')

@@ -1,11 +1,13 @@
 /**
- * The OpenCode settings section. One page serves both plans: the Zen
- * pay-as-you-go gateway, whose fields are the document's top-level ones, and
- * the Go subscription, whose fields live in the `go` block. Each panel leads
- * with its own switch and the key a user has to supply (stored write-only
- * through the credentials domain), then the models that gateway currently
- * serves; the credential references, the endpoints, and the adapter tuning
- * both plans share sit behind one collapsed disclosure.
+ * The OpenCode settings section. One page serves both plans: the Go
+ * subscription, whose fields live in the `go` block, and the Zen
+ * pay-as-you-go gateway, whose fields are the document's top-level ones. Each
+ * panel leads with its own switch, and shows the key a user has to supply
+ * (stored write-only through the credentials domain) together with the models
+ * that gateway currently serves only while the plan is on: a withdrawn plan
+ * keeps the switch that turns it back on and nothing else. The credential
+ * references, the endpoints, and the adapter tuning both plans share sit
+ * behind one collapsed disclosure above the panels.
  */
 
 import { useEffect, useState } from 'react'
@@ -128,7 +130,12 @@ function ModelsBody({ models, copy }: {
 /** One plan's staged on/off switch. */
 function EnableSwitch({ label, hint, on, disabled, onChange }: {
   label: string
-  hint: string
+  /**
+   * Wording under the switch. Omit it where the panel already carries the
+   * consequence: a plan that hides its own settings while withdrawn does not
+   * need a sentence saying so.
+   */
+  hint?: string
   on: boolean
   disabled: boolean
   onChange: (next: boolean) => void
@@ -148,7 +155,7 @@ function EnableSwitch({ label, hint, on, disabled, onChange }: {
           onChange={onChange}
         />
       </div>
-      <p className={css.hint}>{hint}</p>
+      {hint === undefined ? null : <p className={css.hint}>{hint}</p>}
     </div>
   )
 }
@@ -403,6 +410,17 @@ function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
           )
           : null}
       </div>
+      <GoPanel
+        panel={state.go}
+        t={t}
+        disabled={disabled}
+        saving={state.saving}
+        onEdit={props.edit}
+        onRefreshModels={loadGoModels}
+        onToggleCheck={setGoModelChecked}
+        onClearChecks={props.clearGoModelChecks}
+        onRefreshUsage={loadUsage}
+      />
       <section className={css.planPanel} aria-label={t('planZenTitle')}>
         <div className={css.planHead}>
           <h3 className={css.planTitle}>{t('planZenTitle')}</h3>
@@ -415,6 +433,9 @@ function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
           disabled={disabled}
           onChange={(next) => { props.edit('enabled', String(next)) }}
         />
+        {/* A withdrawn plan keeps its header and switch - that is what turns it
+            back on - and drops its settings, which cannot take effect anyway. */}
+        {state.enabled ? <>
         <KeyControl
           id="opencode-zen-key"
           label={t('keyLabel')}
@@ -446,7 +467,6 @@ function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
             <Switch checked={state.showDeprecatedModels} label={t('showDeprecatedLabel')}
               disabled={disabled} onChange={(next) => { props.edit('showDeprecatedModels', String(next)) }} />
           </div>
-          <p className={css.hint}>{t('showDeprecatedHint')}</p>
           <ModelEditor models={state.models} draft={state.modelLimitDraft}
             checked={state.checkedModels} checkedCount={state.checkedCount}
             sortOptions={['default', 'price', 'release']}
@@ -454,18 +474,8 @@ function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
             onEdit={next => { props.edit('modelLimits', JSON.stringify(next)) }}
             onToggleCheck={setModelChecked} onClearChecks={props.clearModelChecks} />
         </div>
+        </> : null}
       </section>
-      <GoPanel
-        panel={state.go}
-        t={t}
-        disabled={disabled}
-        saving={state.saving}
-        onEdit={props.edit}
-        onRefreshModels={loadGoModels}
-        onToggleCheck={setGoModelChecked}
-        onClearChecks={props.clearGoModelChecks}
-        onRefreshUsage={loadUsage}
-      />
       {disabled ? <p className={css.hint}>{t('readOnly')}</p> : null}
       </div>
       <div className={css.actions}>
@@ -482,9 +492,10 @@ function Loaded(props: LoadedActions & { state: OpencodeZenSectionState }) {
 }
 
 /**
- * The Go subscription's panel. Its own copy keeps every landmark and control
- * name distinct from the Zen panel above it, which matters to assistive
- * technology and to anything reading this page's structure.
+ * The Go subscription's panel, which the page leads with. Its own copy keeps
+ * every landmark and control name distinct from the Zen panel below it, which
+ * matters to assistive technology and to anything reading this page's
+ * structure.
  */
 function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggleCheck, onClearChecks, onRefreshUsage }: {
   panel: OpencodeGoPanelState
@@ -503,14 +514,15 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
         <h3 className={css.planTitle}>{t('planGoTitle')}</h3>
         <Tag tone="neutral">{t('planSubscription')}</Tag>
       </div>
-      <p className={css.hint}>{t('goIntro')}</p>
       <EnableSwitch
         label={t('goEnabledLabel')}
-        hint={panel.enabled ? t('goEnabledHint') : t('goEnabledOff')}
         on={panel.enabled}
         disabled={disabled}
         onChange={(next) => { onEdit('go.enabled', String(next)) }}
       />
+      {/* Same posture as the Zen panel above: the switch and its heading are
+          the whole panel while the plan is withdrawn. */}
+      {panel.enabled ? <>
       <KeyControl
         id="opencode-zen-go-key"
         label={t('goKeyLabel')}
@@ -543,7 +555,6 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
             {t('goQuotaRefresh')}
           </button>
         </div>
-        <p className={css.hint}>{t('goQuotaHint')}</p>
         <GoUsagePanel usage={panel.usage} t={t} />
       </div>
       <div className={css.field}>
@@ -552,7 +563,6 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
           <Switch checked={panel.showDeprecatedModels} label={t('goShowDeprecatedLabel')}
             disabled={disabled} onChange={(next) => { onEdit('go.showDeprecatedModels', String(next)) }} />
         </div>
-        <p className={css.hint}>{t('goShowDeprecatedHint')}</p>
         <ModelEditor models={panel.models} draft={panel.modelLimitDraft}
           checked={panel.checkedModels} checkedCount={panel.checkedCount}
           sortOptions={['default', 'release', 'monthly']}
@@ -560,6 +570,7 @@ function GoPanel({ panel, t, disabled, saving, onEdit, onRefreshModels, onToggle
           onEdit={next => { onEdit('go.modelLimits', JSON.stringify(next)) }}
           onToggleCheck={onToggleCheck} onClearChecks={onClearChecks} />
       </div>
+      </> : null}
     </section>
   )
 }

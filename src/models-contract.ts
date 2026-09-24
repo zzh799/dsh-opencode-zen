@@ -14,6 +14,41 @@ export interface ZenModelPrice {
   actual: number
 }
 
+/**
+ * Format one per-100M-token price for display. Sub-cent prices keep four
+ * digits: at two, every cheap model in the list would read `$0.00`.
+ * @param value - price in dollars per 100M tokens.
+ * @returns the formatted price, `$`-prefixed.
+ */
+export function formatModelPrice(value: number): string {
+  return `$${value.toFixed(value > 0 && value < 0.01 ? 4 : 2)}`
+}
+
+/** The figures one model row's price badge and its hover detail report. */
+export interface ZenPriceDetail {
+  /** The plan's actual price per 100M tokens, which is what the badge shows. */
+  readonly badge: string
+  /** The same price per 1M tokens: the unit a reader compares across models. */
+  readonly perMillion: string
+  /** Actual as a percentage of source, present only once the two differ. */
+  readonly ratio?: string
+}
+
+/**
+ * Derive every number the row's price badge and its hover detail display. Kept
+ * beside the other listing logic so the arithmetic is testable without a render.
+ * @param price - the model's source and actual price per 100M tokens.
+ * @returns the badge text, the per-million conversion, and the source ratio
+ *   when the plan's multiplier actually moved the price.
+ */
+export function priceDetail(price: ZenModelPrice): ZenPriceDetail {
+  const badge = formatModelPrice(price.actual)
+  const perMillion = `$${(price.actual / 100).toFixed(4)}`
+  return price.source > 0 && price.actual !== price.source
+    ? { badge, perMillion, ratio: `${Math.round((price.actual / price.source) * 100)}%` }
+    : { badge, perMillion }
+}
+
 export interface ZenModel {
   id: string
   name?: string

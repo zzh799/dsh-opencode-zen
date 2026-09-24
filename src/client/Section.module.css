@@ -275,7 +275,14 @@
 /* The batch action sits at the right end of the sort row it acts on, away from the page's Save/Discard. */
 .clearChecks { margin-left: auto; padding: 6px 9px; border: 0; border-radius: 6px; background: none; font: inherit; font-size: 12px; color: var(--dsw-alias-label-tertiary); cursor: pointer; }
 .clearChecks:disabled { color: var(--dsw-alias-label-tertiary); cursor: default; }
-.sectionTitle { margin: 0; font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--dsw-alias-label-primary); }
+.sectionTitle { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 500; line-height: 1.5; color: var(--dsw-alias-label-primary); }
+.sectionTitleText { min-width: 0; overflow-wrap: anywhere; }
+/* The standing hint paragraph's replacement: a round icon whose bubble holds
+ * the same text. The host Tooltip owns the bubble, so this only draws the
+ * anchor, at the same size as a Tag so it reads as a badge, not a button. */
+.help { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; padding: 0; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 50%; background: none; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 10px; line-height: 1; cursor: help; }
+.help:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-label-secondary); }
+.help:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .modelLayout { display: grid; grid-template-columns: minmax(0, 43fr) minmax(0, 57fr); height: clamp(240px, calc(100cqh - 460px), 480px); border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 10px; overflow: hidden; }
 .modelList { overflow-y: auto; min-height: 0; padding: 6px; border-right: 0.5px solid var(--dsw-alias-border-l2); }
 /* One row is a checkbox plus the row button: two controls, never nested in each other. */
@@ -291,6 +298,9 @@
 .modelChoice:hover { background: var(--dsw-alias-bg-layer-3); }
 .modelSummary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; }
 .modelName { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+/* The name shrinks before the badges do, so a long id wraps instead of pushing
+ * the NEW/deprecated and price badges off the row. */
+.modelNameText { min-width: 0; }
 .modelMonthlyRequests { padding-top: 1px; font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
 .modelDetails { overflow-y: auto; min-width: 0; padding: 18px; display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
 .modelDetails h3 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
@@ -299,8 +309,9 @@
 .modelDetails .input { width: 100%; box-sizing: border-box; min-width: 0; }
 .modelDetails .reset { align-self: flex-start; }
 .newBadge { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-3); border: 0.5px solid var(--dsw-alias-border-l4); font-size: 9px; border-radius: 4px; padding: 2px 4px; }
-.releaseDate { display: block; margin-top: 4px; font-size: 10px; color: var(--dsw-alias-label-tertiary); }
-.modelPrice { display: block; margin-top: 3px; font-size: 10px; line-height: 1.4; color: var(--dsw-alias-label-tertiary); }
+/* The plan's actual price, riding the model name on the row's single line; the
+ * row's bubble carries the source price and the arithmetic behind it. */
+.modelPriceBadge { flex: none; padding: 1px 5px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 4px; background: var(--dsw-alias-bg-layer-3); font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-secondary); }
 .modelChoice:focus-visible, .clearChecks:focus-visible, .checkbox:focus-visible, .advancedTrigger:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
 @container (max-width: 440px) {
   .pageTop { flex-wrap: wrap; }
